@@ -34,16 +34,18 @@ SCRIPT_FILE_PATH = Path(__file__).parent / "spark_jobs" / SCRIPT_FILE_NAME
 SCRIPT_MOUNT_DIR = "/opt/spark/app"
 SCRIPT_MOUNT_PATH = f"{SCRIPT_MOUNT_DIR}/{SCRIPT_FILE_NAME}"
 SPARK_SERVICE_ACCOUNT = "spark"
-S3_CREDENTIALS_SECRET = "creds-airflow-s3"
-S3_ACCESS_KEY_FIELD = "accessKey"
-S3_SECRET_KEY_FIELD = "secretKey"
-DEFAULT_S3_BUCKET = "airflow-logs"
-DEFAULT_S3_INPUT_PREFIX = "orders/raw"
-DEFAULT_S3_OUTPUT_PREFIX = "orders/curated"
+S3_CREDENTIALS_SECRET = "creds-examples-s3"
+S3_ACCESS_KEY_FIELD = "S3_ACCESS_KEY"
+S3_SECRET_KEY_FIELD = "S3_SECRET_KEY"
+DEFAULT_S3_INPUT_BUCKET = "bronze"
+DEFAULT_S3_OUTPUT_BUCKET = "bronze"
+DEFAULT_S3_INPUT_PREFIX = "commerce/orders/raw"
+DEFAULT_S3_OUTPUT_PREFIX = "commerce/orders/curated"
 # The sandbox store. Any other platform sets AIRFLOW_ETL_S3_ENDPOINT.
 DEFAULT_S3_ENDPOINT = "http://storage-s3.default.svc.cluster.local:8333"
 S3_ENDPOINT_ENV_VAR = "AIRFLOW_ETL_S3_ENDPOINT"
-S3_BUCKET_ENV_VAR = "AIRFLOW_ETL_S3_BUCKET"
+S3_INPUT_BUCKET_ENV_VAR = "AIRFLOW_ETL_S3_INPUT_BUCKET"
+S3_OUTPUT_BUCKET_ENV_VAR = "AIRFLOW_ETL_S3_OUTPUT_BUCKET"
 S3_INPUT_PREFIX_ENV_VAR = "AIRFLOW_ETL_S3_INPUT_PREFIX"
 S3_OUTPUT_PREFIX_ENV_VAR = "AIRFLOW_ETL_S3_OUTPUT_PREFIX"
 S3_VERIFY_SSL_ENV_VAR = "AIRFLOW_ETL_S3_VERIFY_SSL"
@@ -87,18 +89,15 @@ def _s3_endpoint() -> str:
 
 
 def _resolve_s3_locations() -> tuple[str, str, str, str]:
-    bucket = (
-        os.getenv(S3_BUCKET_ENV_VAR, "").strip()
-        or os.getenv("AIRFLOW_DAGS_S3_BUCKET", "").strip()
-        or DEFAULT_S3_BUCKET
-    )
+    input_bucket = os.getenv(S3_INPUT_BUCKET_ENV_VAR, "").strip() or DEFAULT_S3_INPUT_BUCKET
+    output_bucket = os.getenv(S3_OUTPUT_BUCKET_ENV_VAR, "").strip() or DEFAULT_S3_OUTPUT_BUCKET
     input_prefix = _clean_prefix(os.getenv(S3_INPUT_PREFIX_ENV_VAR, ""), DEFAULT_S3_INPUT_PREFIX)
     output_prefix = _clean_prefix(os.getenv(S3_OUTPUT_PREFIX_ENV_VAR, ""), DEFAULT_S3_OUTPUT_PREFIX)
 
     s3_endpoint = _s3_endpoint()
-    s3_input_uri = f"s3a://{bucket}/{input_prefix}"
-    s3_output_uri_base = f"s3a://{bucket}/{output_prefix}"
-    return bucket, s3_endpoint, s3_input_uri, s3_output_uri_base
+    s3_input_uri = f"s3a://{input_bucket}/{input_prefix}"
+    s3_output_uri_base = f"s3a://{output_bucket}/{output_prefix}"
+    return output_bucket, s3_endpoint, s3_input_uri, s3_output_uri_base
 
 
 def _bool_env(env_name: str, default_value: bool) -> bool:
