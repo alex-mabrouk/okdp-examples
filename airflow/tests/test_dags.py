@@ -5,7 +5,7 @@ import pytest
 
 airflow = pytest.importorskip("airflow")
 from airflow.models import DagBag
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 
 DAGS_DIR = Path(__file__).resolve().parents[1] / "dags"
