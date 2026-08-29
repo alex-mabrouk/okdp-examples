@@ -28,6 +28,10 @@ bin/
 ### vscode ###
 .vscode/
 
+### Python
+__pycache__/
+*.py[cod]
+
 ### Others
 /docker/package-lock.json
 .tmp/

@@ -8,3 +8,6 @@ test_*.py
 spark_jobs/
 hello_world.py
 spark_pi_example.py
+# Imported by the DAGs; carry no DAG of their own.
+spark_submit.py
+france_establishments_assets.py
