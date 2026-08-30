@@ -1,4 +1,4 @@
-# Build the Trino->gold database and the five france_establishments datasets in Superset.
+# Build the Trino->gold database and the france_establishments datasets in Superset.
 import json
 
 from superset import db
@@ -130,9 +130,27 @@ SPECS = {
         ],
         [("nb_creations_sum", "SUM(nb_creations)", "Créations", INT)],
     ),
+    # Sentences written by the local model from the figures Spark computed, with
+    # the figure kept beside them: the panel shows what was asserted and what was
+    # published from it.
+    "insights": (
+        [
+            ("category", "VARCHAR", False),
+            ("scope", "VARCHAR", False),
+            ("subject", "VARCHAR", False),
+            ("metric", "VARCHAR", False),
+            ("claim", "VARCHAR", False),
+            ("insight", "VARCHAR", False),
+            ("status", "VARCHAR", False),
+            ("model", "VARCHAR", False),
+            ("run_id", "VARCHAR", False),
+            ("generated_at", "TIMESTAMP", True),
+        ],
+        [("nb_insights", "COUNT(*)", "Insights", INT)],
+    ),
 }
 
-DTTM_COLUMN = {"creations_par_mois": "mois_creation"}
+DTTM_COLUMN = {"creations_par_mois": "mois_creation", "insights": "generated_at"}
 
 
 def upsert_dataset(dbobj, name, columns, metrics):

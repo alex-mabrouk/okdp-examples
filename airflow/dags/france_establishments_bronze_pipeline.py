@@ -151,6 +151,9 @@ with DAG(
     # The sources are republished monthly; the DAG starts paused, as all of them do.
     schedule="@monthly",
     catchup=False,
+    # Two runs writing the same S3 prefixes or the same Iceberg tables corrupt
+    # each other; the chain has nothing to gain from overlapping.
+    max_active_runs=1,
     tags=["france-establishments", "bronze", "spark", "etl"],
 ) as dag:
     for source in BRONZE_ASSETS:

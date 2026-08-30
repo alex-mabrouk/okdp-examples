@@ -16,12 +16,14 @@ PAR_SECTION = "etablissements_par_section_naf"
 PAR_MOIS = "creations_par_mois"
 PAR_COMMUNE = "etablissements_par_commune"
 PAR_CATEGORIE = "etablissements_par_categorie"
+INSIGHTS = "insights"
 DATASETS_BUILT = {
     PAR_DEPARTEMENT,
     "etablissements_par_section_naf",
     "etablissements_par_commune",
     PAR_CATEGORIE,
     "creations_par_mois",
+    INSIGHTS,
 }
 
 
@@ -250,6 +252,33 @@ chart("detail", "📋 Détail par département", {
     "color_scheme": "supersetColors",
 })
 
+# Only the verified rows are shown. The rejected ones stay in the table on
+# purpose -- the check is part of what there is to demonstrate -- but a dashboard
+# is not where a sentence the pipeline refused belongs.
+chart("ai_insights", "🤖 Lecture des indicateurs par le modèle local", {
+    "datasource": source(INSIGHTS),
+    "viz_type": "table",
+    "query_mode": "raw",
+    "all_columns": ["category", "scope", "insight", "model"],
+    "column_config": {
+        "category": {"columnWidth": 110},
+        "scope": {"columnWidth": 150},
+        "model": {"columnWidth": 90},
+    },
+    "order_by_cols": ['["category", true]'],
+    "row_limit": 100,
+    "adhoc_filters": [
+        {
+            "clause": "WHERE",
+            "subject": "status",
+            "operator": "==",
+            "comparator": "verified",
+            "expressionType": "SIMPLE",
+        }
+    ],
+    "color_scheme": "supersetColors",
+})
+
 slice_ids = {}
 for key, (name, params) in CHARTS.items():
     existing = db.session.query(Slice).filter_by(slice_name=name).first()
@@ -309,6 +338,7 @@ position = {
 ROWS = [
     ("KPI", [("kpi_total", 3, 30), ("kpi_qpv", 3, 30), ("kpi_ess", 3, 30),
              ("kpi_communes", 3, 30)]),
+    ("IA", [("ai_insights", 12, 60)]),
     ("CARTES", [("carte_densite", 6, 70), ("carte_qpv", 6, 70)]),
     ("ACTIVITE", [("sections_naf", 6, 60), ("top_departements", 6, 60)]),
     ("QPV", [("sections_qpv", 6, 60), ("qpv_taux", 6, 60)]),

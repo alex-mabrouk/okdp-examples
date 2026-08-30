@@ -28,7 +28,9 @@ from pyspark.sql.types import (
 )
 
 UNKNOWN_DEPARTMENT = "ZZ"
-MAX_CHARS = 200
+# Comparison facts need the room: the model keeps landing at ~215 characters and
+# three retries do not talk it down.
+MAX_CHARS = 240
 
 FACTS_SCHEMA = StructType(
     [
@@ -171,8 +173,8 @@ def collect_facts(spark, gold):
         gap = round(abs(v - nat["part_qpv"]), 2)
         facts.append(fact(f"top_dept_part_qpv_{i}", "qpv", d,
                           "part des établissements situés en quartier prioritaire", v, "%",
-                          f"En {d}, {n(v)} % des établissements actifs sont situés dans un "
-                          f"quartier prioritaire, contre {n(nat['part_qpv'])} % en France, "
+                          f"{d} — {n(v)} % des établissements actifs sont situés dans un "
+                          f"quartier prioritaire, contre {n(nat['part_qpv'])} % au niveau national, "
                           f"soit {n(gap)} points de plus.",
                           rank=i, comparison=nat["part_qpv"], comparison_unit="%"))
 
@@ -180,8 +182,8 @@ def collect_facts(spark, gold):
     d, v = r["libelle_departement"], r["part_ess"]
     facts.append(fact("top_dept_part_ess", "ess", d,
                       "part des établissements de l'économie sociale et solidaire", v, "%",
-                      f"En {d}, {n(v)} % des établissements actifs relèvent de l'économie "
-                      f"sociale et solidaire, contre {n(nat['part_ess'])} % en France, soit "
+                      f"{d} — {n(v)} % des établissements actifs relèvent de l'économie "
+                      f"sociale et solidaire, contre {n(nat['part_ess'])} % au niveau national, soit "
                       f"{n(round(abs(v - nat['part_ess']), 2))} points de plus.",
                       comparison=nat["part_ess"], comparison_unit="%"))
 
@@ -274,7 +276,7 @@ Règles absolues :
   écrit dans l'affirmation ;
 - n'écris aucun nombre en toutes lettres ;
 - ne change pas le sens ;
-- 200 caractères au maximum.
+- 240 caractères au maximum.
 
 Réponds en JSON : {"insight": "..."}
 """
