@@ -72,6 +72,9 @@ with DAG(
     # Runs as soon as silver publishes a new snapshot.
     schedule=[SILVER_ASSET],
     catchup=False,
+    # Two runs writing the same S3 prefixes or the same Iceberg tables corrupt
+    # each other; the chain has nothing to gain from overlapping.
+    max_active_runs=1,
     tags=["france-establishments", "gold", "iceberg", "polaris", "spark", "etl"],
 ) as dag:
     PythonOperator(

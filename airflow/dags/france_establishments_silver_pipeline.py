@@ -72,6 +72,9 @@ with DAG(
     # Runs once the three SIRENE bronze tables have all been refreshed.
     schedule=SILVER_INPUTS,
     catchup=False,
+    # Two runs writing the same S3 prefixes or the same Iceberg tables corrupt
+    # each other; the chain has nothing to gain from overlapping.
+    max_active_runs=1,
     tags=["france-establishments", "silver", "iceberg", "polaris", "spark", "etl"],
 ) as dag:
     PythonOperator(

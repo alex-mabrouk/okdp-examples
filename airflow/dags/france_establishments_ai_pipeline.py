@@ -65,6 +65,9 @@ with DAG(
     description="Writes the gold indicators up as verified sentences, with a local model",
     schedule=GOLD_ASSETS,
     catchup=False,
+    # Two runs writing the same S3 prefixes or the same Iceberg tables corrupt
+    # each other; the chain has nothing to gain from overlapping.
+    max_active_runs=1,
     tags=["france-establishments", "ai", "ollama", "iceberg", "polaris", "spark"],
 ) as dag:
     PythonOperator(
