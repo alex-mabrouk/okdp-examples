@@ -60,6 +60,10 @@ SILVER_ASSET = Asset(
     uri=f"iceberg://{SILVER_CATALOG}/{SILVER_NAMESPACE}/{SILVER_TABLE}",
 )
 
+# The AI step reads the gold tables and publishes two of its own: the figures it
+# is allowed to mention, and the sentences written from them.
+AI_TABLES = ("insights_facts", "insights")
+
 GOLD_ASSETS = [
     Asset(
         name=f"gold_{GOLD_NAMESPACE}_{table}",
@@ -67,6 +71,20 @@ GOLD_ASSETS = [
     )
     for table in GOLD_TABLES
 ]
+
+
+AI_ASSETS = [
+    Asset(
+        name=f"gold_{GOLD_NAMESPACE}_{table}",
+        uri=f"iceberg://{GOLD_CATALOG}/{GOLD_NAMESPACE}/{table}",
+    )
+    for table in AI_TABLES
+]
+
+OLLAMA_URL = os.getenv(
+    "FRANCE_ESTABLISHMENTS_OLLAMA_URL", "http://demo-ollama-main.demo.svc.cluster.local:11434"
+)
+OLLAMA_MODEL = os.getenv("FRANCE_ESTABLISHMENTS_OLLAMA_MODEL", "mistral:7b")
 
 
 def departments():
