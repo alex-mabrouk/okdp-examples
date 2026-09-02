@@ -59,6 +59,7 @@ default_args = {
 
 def _s3_client():
     import boto3
+    from botocore.config import Config
 
     missing = [v for v in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY") if not os.getenv(v)]
     if missing:
@@ -71,6 +72,13 @@ def _s3_client():
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
         region_name=os.getenv("AWS_REGION", "us-east-1"),
+        # Landing the whole of France means 8 MB parts that outlast botocore's
+        # 60 s read timeout, and nothing retries them by default.
+        config=Config(
+            connect_timeout=60,
+            read_timeout=600,
+            retries={"max_attempts": 5, "mode": "standard"},
+        ),
     )
 
 
@@ -86,6 +94,7 @@ def _already_landed(s3, key, expected_size):
 def _land_url(s3, url, source):
     """Stream one remote file straight into S3, without staging it on disk."""
     import requests
+    from boto3.s3.transfer import TransferConfig
 
     with requests.get(url, stream=True, timeout=(30, 600)) as response:
         response.raise_for_status()
@@ -101,7 +110,16 @@ def _land_url(s3, url, source):
         pretty = f"{size / 1e6:.1f} MB" if size else "unknown size"
         print(f"landing {response.url} ({pretty}) -> s3://{BRONZE_BUCKET}/{key}")
         response.raw.decode_content = True
-        s3.upload_fileobj(response.raw, BRONZE_BUCKET, key)
+        # Fewer, larger parts off a single non-seekable stream: 940 MB goes from
+        # ~113 parts across 10 threads down to ~15 across 4.
+        s3.upload_fileobj(
+            response.raw,
+            BRONZE_BUCKET,
+            key,
+            Config=TransferConfig(
+                multipart_chunksize=64 * 1024 * 1024, max_concurrency=4
+            ),
+        )
 
     print(f"landed s3://{BRONZE_BUCKET}/{key}")
     return key
