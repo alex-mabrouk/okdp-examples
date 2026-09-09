@@ -13,8 +13,22 @@ every page -- the convention a French reader already knows, and the only marking
 the document carries.
 """
 import io
+import os
 
+import reportlab
 from facturx import generate_from_binary
+from PIL import ImageCms
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    NumberObject,
+    create_string_object,
+)
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -27,20 +41,50 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+# PDF/A forbids relying on the fourteen standard PDF fonts: every font used has to
+# be embedded in the file. Helvetica is not embeddable, so the document is set in
+# Bitstream Vera, which ships with reportlab under a permissive licence and needs
+# no extra file in the image.
+_FONT_DIR = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
+POLICE = "Vera"
+POLICE_GRASSE = "Vera-Bold"
+
+
+def _enregistrer_polices():
+    if POLICE in pdfmetrics.getRegisteredFontNames():
+        return
+    pdfmetrics.registerFont(TTFont(POLICE, os.path.join(_FONT_DIR, "Vera.ttf")))
+    pdfmetrics.registerFont(TTFont(POLICE_GRASSE, os.path.join(_FONT_DIR, "VeraBd.ttf")))
+    pdfmetrics.registerFontFamily(POLICE, normal=POLICE, bold=POLICE_GRASSE)
+
+
 ARDOISE = colors.HexColor("#1f2933")
 GRIS = colors.HexColor("#e4e7eb")
 GRIS_TEXTE = colors.HexColor("#616e7c")
 
 
 def _styles():
+    _enregistrer_polices()
     base = getSampleStyleSheet()
     return {
         "titre": ParagraphStyle(
-            "titre", parent=base["Title"], fontSize=20, textColor=ARDOISE, alignment=0
+            "titre",
+            parent=base["Title"],
+            fontName=POLICE_GRASSE,
+            fontSize=20,
+            textColor=ARDOISE,
+            alignment=0,
         ),
-        "normal": ParagraphStyle("n", parent=base["Normal"], fontSize=9, leading=12),
+        "normal": ParagraphStyle(
+            "n", parent=base["Normal"], fontName=POLICE, fontSize=9, leading=12
+        ),
         "petit": ParagraphStyle(
-            "p", parent=base["Normal"], fontSize=7.5, leading=10, textColor=GRIS_TEXTE
+            "p",
+            parent=base["Normal"],
+            fontName=POLICE,
+            fontSize=7.5,
+            leading=10,
+            textColor=GRIS_TEXTE,
         ),
     }
 
@@ -97,7 +141,8 @@ def _tableau_lignes(invoice, styles):
             [
                 ("BACKGROUND", (0, 0), (-1, 0), ARDOISE),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, -1), POLICE),
+                ("FONTNAME", (0, 0), (-1, 0), POLICE_GRASSE),
                 ("FONTSIZE", (0, 0), (-1, -1), 8.5),
                 ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -127,7 +172,8 @@ def _tableau_totaux(invoice):
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("ALIGN", (1, 0), (1, -1), "RIGHT"),
                 ("LINEABOVE", (0, -2), (-1, -2), 0.8, ARDOISE),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, -1), POLICE),
+                ("FONTNAME", (0, -1), (-1, -1), POLICE_GRASSE),
                 ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f5f7fa")),
                 ("TOPPADDING", (0, 0), (-1, -1), 3),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
@@ -139,12 +185,53 @@ def _tableau_totaux(invoice):
 
 def _filigrane(canvas, doc):
     canvas.saveState()
-    canvas.setFont("Helvetica-Bold", 30)
+    _enregistrer_polices()
+    canvas.setFont(POLICE_GRASSE, 30)
     canvas.setFillColor(colors.HexColor("#f0d5c4"))
     canvas.translate(A4[0] / 2, A4[1] / 2)
     canvas.rotate(38)
     canvas.drawCentredString(0, 0, "SPÉCIMEN")
     canvas.restoreState()
+
+
+def _srgb_icc():
+    """The sRGB profile PDF/A wants, built rather than shipped.
+
+    Pillow can synthesise one through littlecms, which spares the image an ICC
+    file and a package that would only carry it.
+    """
+    return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+
+def _avec_output_intent(pdf_bytes):
+    """Declare the colour space the page is rendered in.
+
+    Without it veraPDF rejects the file: PDF/A forbids DeviceRGB unless the
+    document says which RGB it means. This is the last of the two things that
+    separate a PDF carrying an attachment from a conforming PDF/A-3.
+    """
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(pdf_bytes)))
+
+    profil = DecodedStreamObject()
+    profil.set_data(_srgb_icc())
+    profil[NameObject("/N")] = NumberObject(3)
+
+    intent = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/OutputIntent"),
+            NameObject("/S"): NameObject("/GTS_PDFA1"),
+            NameObject("/OutputConditionIdentifier"): create_string_object("sRGB"),
+            NameObject("/Info"): create_string_object("sRGB IEC61966-2.1"),
+            NameObject("/DestOutputProfile"): writer._add_object(profil),
+        }
+    )
+    writer._root_object[NameObject("/OutputIntents")] = ArrayObject(
+        [writer._add_object(intent)]
+    )
+
+    sortie = io.BytesIO()
+    writer.write(sortie)
+    return sortie.getvalue()
 
 
 def render_pdf(invoice):
@@ -229,17 +316,20 @@ def render_pdf(invoice):
     ]
 
     doc.build(story, onFirstPage=_filigrane, onLaterPages=_filigrane)
-    return buffer.getvalue()
+    return _avec_output_intent(buffer.getvalue())
 
 
-def render_facturx(invoice, xml):
+def render_facturx(invoice, xml, check_xsd=False):
     """The PDF with the CII XML embedded: one Factur-X file.
 
-    `check_xsd` stays on. A document whose two halves disagree is exactly the
-    defect this pipeline exists to catch, and it should never be one we shipped.
+    `check_xsd` is off by default. Validating five hundred documents that one
+    generator just produced from one template proves nothing five times over, and
+    it reparses a large schema each call; silver validates every invoice of the
+    flow against the XSD *and* the official Schematrons, which is the check that
+    counts. Turn it on when rendering a document on its own.
     """
     return generate_from_binary(
         render_pdf(invoice),
         xml if isinstance(xml, bytes) else xml.encode("utf-8"),
-        check_xsd=True,
+        check_xsd=check_xsd,
     )

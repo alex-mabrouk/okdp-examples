@@ -27,6 +27,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import einvoicing_cii as cii
+import einvoicing_pdf as pdfgen
 import einvoicing_rules as rules
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -73,6 +74,7 @@ TRUTH_SCHEMA = StructType(
         StructField("profil", StringType(), False),
         StructField("regle_id", StringType(), True),
         StructField("montant_ttc", DoubleType(), True),
+        StructField("fichier_pdf", StringType(), True),
     ]
 )
 
@@ -84,6 +86,8 @@ def parse_args():
     parser.add_argument("--truth", required=True)
     parser.add_argument("--bucket", required=True)
     parser.add_argument("--key-prefix", required=True, help="key prefix inside the bucket")
+    parser.add_argument("--pdf-prefix", required=True, help="key prefix for the PDF subset")
+    parser.add_argument("--pdf-count", type=int, default=500)
     parser.add_argument("--count", type=int, default=20000)
     parser.add_argument("--months", type=int, default=24)
     parser.add_argument("--seed", type=int, required=True)
@@ -326,19 +330,34 @@ def generer_partition(index, rows, params, cast):
             regle_id = rules.INJECTABLE[rng.randrange(len(rules.INJECTABLE))]
             jumelle = injecter(rng, invoice, regle_id, cesses)
 
+        # Every invoice of the flow gets its XML. A readable PDF is rendered for a
+        # subset only -- nobody opens twenty thousand of them -- and that subset
+        # always holds the anomalies, because they are what a demo drills into.
+        rendre_pdf = regle_id is not None or row.id < params["pdf_count"]
+
         for suffix, document in (("", invoice), ("__doublon", jumelle)):
             if document is None:
                 continue
-            key = (
-                f"{params['key_prefix']}/mois={document['_mois']}/"
-                f"{document['numero']}{suffix}.xml"
-            )
+            base = f"mois={document['_mois']}/{document['numero']}{suffix}"
+            key = f"{params['key_prefix']}/{base}.xml"
+            xml = cii.build(document).encode("utf-8")
             client.put_object(
                 Bucket=params["bucket"],
                 Key=key,
-                Body=cii.build(document).encode("utf-8"),
+                Body=xml,
                 ContentType="application/xml",
             )
+
+            pdf_key = None
+            if rendre_pdf:
+                pdf_key = f"{params['pdf_prefix']}/{base}.pdf"
+                client.put_object(
+                    Bucket=params["bucket"],
+                    Key=pdf_key,
+                    Body=pdfgen.render_facturx(document, xml),
+                    ContentType="application/pdf",
+                )
+
             yield (
                 document["numero"],
                 key,
@@ -347,6 +366,7 @@ def generer_partition(index, rows, params, cast):
                 document["profil"],
                 regle_id,
                 float(document["montant_ttc"]),
+                pdf_key,
             )
 
 
@@ -381,7 +401,7 @@ def main():
     # mounted there but not on their sys.path: only the driver gets the script's
     # own directory for free. Registering them here is what makes the closure
     # unpicklable-free on the other side.
-    for module in ("einvoicing_cii.py", "einvoicing_rules.py"):
+    for module in ("einvoicing_cii.py", "einvoicing_pdf.py", "einvoicing_rules.py"):
         spark.sparkContext.addPyFile(str(Path(__file__).parent / module))
 
     cast = charger_casting(spark, args.casting)
@@ -397,6 +417,8 @@ def main():
         "extended_rate": args.extended_rate,
         "bucket": args.bucket,
         "key_prefix": args.key_prefix,
+        "pdf_prefix": args.pdf_prefix,
+        "pdf_count": args.pdf_count,
     }
     broadcast_cast = spark.sparkContext.broadcast(cast)
     broadcast_params = spark.sparkContext.broadcast(params)
@@ -424,6 +446,11 @@ def main():
         .orderBy("regle_id")
         .show(30, truncate=False)
     )
+    print("\nFactur-X PDF rendered:")
+    published.selectExpr(
+        "count(*) as factures", "count(fichier_pdf) as avec_pdf"
+    ).show(truncate=False)
+
     print("\nBy profile:")
     published.groupBy("profil").count().show(truncate=False)
     print("\nBy month (first ten):")
