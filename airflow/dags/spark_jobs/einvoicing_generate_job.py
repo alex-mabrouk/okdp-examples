@@ -24,6 +24,7 @@ import argparse
 import os
 import random
 from datetime import date, timedelta
+from pathlib import Path
 
 import einvoicing_cii as cii
 import einvoicing_rules as rules
@@ -375,6 +376,13 @@ def main():
 
     spark = SparkSession.builder.appName("EInvoicing-Generate").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
+
+    # The generator runs inside the executors, and the modules it imports are
+    # mounted there but not on their sys.path: only the driver gets the script's
+    # own directory for free. Registering them here is what makes the closure
+    # unpicklable-free on the other side.
+    for module in ("einvoicing_cii.py", "einvoicing_rules.py"):
+        spark.sparkContext.addPyFile(str(Path(__file__).parent / module))
 
     cast = charger_casting(spark, args.casting)
     print(

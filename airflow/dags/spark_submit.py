@@ -146,10 +146,14 @@ def _configmap_name(script_path):
 def _ensure_etl_code_configmap(core_api, script_path, modules=()):
     """Publish the job source next to the DAG, so nothing else has to deploy it.
 
-    `modules` are files the job imports. They ride in the same ConfigMap and are
-    declared as pyFiles, which is what puts them on sys.path of the executors --
-    mounting them would only serve the driver. Keeping them out of the job lets
-    them be tested on their own, outside a cluster.
+    `modules` are files the job imports. They ride in the same ConfigMap, so they
+    are mounted next to the job on the driver and on the executors alike.
+
+    Mounting is not enough for an executor: the mount directory is on sys.path of
+    the driver only, because Python puts the main script's directory there. The
+    job itself has to call `addPyFile` on them before any closure that imports
+    them runs -- declaring them as `deps.pyFiles` does not do it, since a
+    `local://` path tells Spark the file is already on the path everywhere.
     """
     if not script_path.is_file():
         raise FileNotFoundError(f"Spark job script not found: {script_path}")
@@ -297,11 +301,6 @@ def submit_and_wait(
             "restartPolicy": {"type": "Never"},
             "timeToLiveSeconds": 3600,
             "sparkConf": conf,
-            "deps": {
-                "pyFiles": [
-                    f"local://{SCRIPT_MOUNT_DIR}/{Path(m).name}" for m in modules
-                ]
-            },
             "volumes": volumes,
             "driver": driver,
             "executor": executor,
