@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent))
 import spark_submit
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import Param
 from einvoicing_assets import (
     ANOMALY_RATE,
     BRONZE_BUCKET,
@@ -65,7 +66,7 @@ default_args = {
 }
 
 
-def build_casting(run_id):
+def build_casting(run_id, seed):
     app = spark_submit.submit_and_wait(
         name=f"{PIPELINE}-casting",
         run_id=run_id,
@@ -77,7 +78,7 @@ def build_casting(run_id):
             "--suppliers", CASTING_SUPPLIERS,
             "--buyers", CASTING_BUYERS,
             "--closed", CASTING_CLOSED,
-            "--seed", SEED,
+            "--seed", seed,
         ],
         spark_conf=spark_submit.iceberg_catalog_conf(SILVER_CATALOG),
         polaris=True,
@@ -91,7 +92,7 @@ def build_casting(run_id):
     return f"Cast drawn into {s3_path(CASTING_PREFIX)} ({app})"
 
 
-def generate_invoices(run_id):
+def generate_invoices(run_id, count, seed):
     app = spark_submit.submit_and_wait(
         name=f"{PIPELINE}-generate",
         run_id=run_id,
@@ -106,9 +107,9 @@ def generate_invoices(run_id):
             "--truth", s3_path(TRUTH_PREFIX),
             "--bucket", BRONZE_BUCKET,
             "--key-prefix", f"{SOURCE_PREFIX}/factures",
-            "--count", INVOICE_COUNT,
+            "--count", count,
             "--months", MONTHS,
-            "--seed", SEED,
+            "--seed", seed,
             "--anomaly-rate", ANOMALY_RATE,
             "--extended-rate", EXTENDED_CTC_FR_RATE,
         ],
@@ -118,7 +119,7 @@ def generate_invoices(run_id):
         timeout_seconds=5400,
         poll_seconds=15,
     )
-    return f"{INVOICE_COUNT:,} invoices written under {s3_path(SOURCE_PREFIX)} ({app})"
+    return f"{int(count):,} invoices written under {s3_path(SOURCE_PREFIX)} ({app})"
 
 
 with DAG(
@@ -127,6 +128,14 @@ with DAG(
     description="Generates the synthetic Factur-X flow from the SIRENE referential",
     schedule=None,
     catchup=False,
+    # Rehearse on a thousand invoices, film on a hundred thousand: the count is a
+    # trigger-time parameter rather than a Release setting, so changing it does not
+    # mean redeploying Airflow. The seed sits next to it because reproducing a run
+    # means reproducing both.
+    params={
+        "count": Param(INVOICE_COUNT, type="integer", minimum=1),
+        "seed": Param(SEED, type="integer"),
+    },
     # Two runs writing the same S3 prefixes corrupt each other, and the seed makes
     # a second concurrent run pointless anyway.
     max_active_runs=1,
@@ -135,7 +144,7 @@ with DAG(
     casting = PythonOperator(
         task_id="build_casting",
         python_callable=build_casting,
-        op_kwargs={"run_id": "{{ run_id }}"},
+        op_kwargs={"run_id": "{{ run_id }}", "seed": "{{ params.seed }}"},
         # Declared, not awaited: this is what draws the two chains into one
         # lineage graph without making the fixture wait on the SIRENE schedule.
         inlets=REFERENTIEL_INLETS,
@@ -143,7 +152,11 @@ with DAG(
     generate = PythonOperator(
         task_id="generate_invoices",
         python_callable=generate_invoices,
-        op_kwargs={"run_id": "{{ run_id }}"},
+        op_kwargs={
+            "run_id": "{{ run_id }}",
+            "count": "{{ params.count }}",
+            "seed": "{{ params.seed }}",
+        },
         outlets=[RAW_ASSET],
     )
     casting >> generate
