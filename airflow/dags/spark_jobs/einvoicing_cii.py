@@ -99,6 +99,12 @@ def _party(element, party, with_vat=True):
     or its VAT number: all three are present here, which is what a real French
     invoice carries anyway.
     """
+    # BR-06 and BR-07 make the name mandatory, and a missing one would otherwise
+    # be escaped into the literal text "None" -- a defect of ours dressed up as an
+    # invoice. The casting guarantees a name; if it ever stops, say so here.
+    if not party.get("nom"):
+        raise ValueError(f"{element}: no name for SIRET {party.get('siret')}")
+
     lines = [f"<{element}>"]
     if party.get("siret"):
         lines.append(_tag("ram:ID", party["siret"], schemeID=SCHEME_SIRET))

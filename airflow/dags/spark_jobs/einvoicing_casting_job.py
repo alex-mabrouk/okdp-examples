@@ -39,8 +39,12 @@ SUPPLIER_MIX = {"GE": 0.15, "ETI": 0.25, "PME": 0.60}
 # string SIRENE publishes, so this is a range and not a prefix.
 PUBLIC_LEGAL_CATEGORY = (7000, 7999)
 
-ACTIVE = "A"
 CLOSED = "F"
+
+# SIRENE lets a legal unit opt out of publication. Silver honours it, and so does
+# this job: these are real companies, and putting the name of a non-diffusible one
+# on an invoice -- even a fictional one -- is not ours to do.
+FULLY_DIFFUSIBLE = "O"
 
 CASTING_COLUMNS = [
     "role",
@@ -144,7 +148,9 @@ def closed_suppliers(spark, bronze, count, seed):
     """Closed establishments live in bronze only: silver keeps active ones.
 
     Sampling before the join to the legal units keeps a thirty-million-row file
-    out of the shuffle -- a hundred and fifty rows are looked up, not joined.
+    out of the shuffle. The pool drawn is wider than the target because the join
+    then drops the ones with no publishable name, and an invoice with no issuer
+    name is not an anomaly worth injecting -- it is a defect of ours.
     """
     etablissements = (
         spark.read.parquet(f"{bronze}/sirene_etablissement/")
@@ -163,16 +169,20 @@ def closed_suppliers(spark, bronze, count, seed):
             "code_departement",
         )
     )
-    drawn = sample(etablissements, count, seed)
+    drawn = sample(etablissements, count * 20, seed)
 
-    unites = spark.read.parquet(f"{bronze}/sirene_unite_legale/").select(
-        col("siren").alias("ul_siren"),
-        "denominationUniteLegale",
-        "categorieEntreprise",
-        "categorieJuridiqueUniteLegale",
+    unites = (
+        spark.read.parquet(f"{bronze}/sirene_unite_legale/")
+        .filter(col("statutDiffusionUniteLegale") == lit(FULLY_DIFFUSIBLE))
+        .select(
+            col("siren").alias("ul_siren"),
+            "denominationUniteLegale",
+            "categorieEntreprise",
+            "categorieJuridiqueUniteLegale",
+        )
     )
 
-    return (
+    joined = (
         broadcast(drawn)
         .join(unites, drawn["siren"] == unites["ul_siren"], "left")
         .select(
@@ -196,6 +206,7 @@ def closed_suppliers(spark, bronze, count, seed):
             col("code_departement"),
         )
     )
+    return joined.filter(col("nom_etablissement").isNotNull()).limit(count)
 
 
 def with_street_address(spark, cast, bronze):
