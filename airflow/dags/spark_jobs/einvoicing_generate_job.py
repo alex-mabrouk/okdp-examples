@@ -254,6 +254,14 @@ def injecter(rng, invoice, regle_id, cesses):
         fournisseur["tva_intracom"] = None
         invoice["fournisseur"] = fournisseur
 
+    elif regle_id == "FMT-NOM-EMETTEUR":
+        # An empty name means "dropped on purpose"; the builder then omits the
+        # element rather than emitting a blank one, which is the cleaner defect:
+        # BR-06 alone, without the empty-element noise on top.
+        fournisseur = dict(invoice["fournisseur"])
+        fournisseur["nom"] = ""
+        invoice["fournisseur"] = fournisseur
+
     elif regle_id == "MET-MENTION":
         invoice["reference_acheteur"] = None
 
