@@ -32,6 +32,7 @@ from einvoicing_assets import (
     EXTENDED_CTC_FR_RATE,
     INVOICE_COUNT,
     MONTHS,
+    PDF_COUNT,
     PIPELINE,
     RAW_ASSET,
     REFERENTIEL_INLETS,
@@ -53,7 +54,11 @@ CASTING_SCRIPT = JOBS / "einvoicing_casting_job.py"
 GENERATE_SCRIPT = JOBS / "einvoicing_generate_job.py"
 # The generator imports both; they ride in the job ConfigMap and are declared as
 # pyFiles so the executors can import them too.
-GENERATE_MODULES = (JOBS / "einvoicing_cii.py", JOBS / "einvoicing_rules.py")
+GENERATE_MODULES = (
+    JOBS / "einvoicing_cii.py",
+    JOBS / "einvoicing_pdf.py",
+    JOBS / "einvoicing_rules.py",
+)
 
 REFERENTIEL = f"{SILVER_CATALOG}.{SILVER_NAMESPACE}.{SILVER_TABLE}"
 
@@ -92,7 +97,7 @@ def build_casting(run_id, seed):
     return f"Cast drawn into {s3_path(CASTING_PREFIX)} ({app})"
 
 
-def generate_invoices(run_id, count, seed):
+def generate_invoices(run_id, count, seed, pdf_count):
     app = spark_submit.submit_and_wait(
         name=f"{PIPELINE}-generate",
         run_id=run_id,
@@ -107,6 +112,8 @@ def generate_invoices(run_id, count, seed):
             "--truth", s3_path(TRUTH_PREFIX),
             "--bucket", BRONZE_BUCKET,
             "--key-prefix", f"{SOURCE_PREFIX}/factures",
+            "--pdf-prefix", f"{SOURCE_PREFIX}/pdf",
+            "--pdf-count", pdf_count,
             "--count", count,
             "--months", MONTHS,
             "--seed", seed,
@@ -135,6 +142,9 @@ with DAG(
     params={
         "count": Param(INVOICE_COUNT, type="integer", minimum=1),
         "seed": Param(SEED, type="integer"),
+        # Anomalous invoices always get a PDF on top of this floor: they are the
+        # ones a demo opens.
+        "pdf_count": Param(PDF_COUNT, type="integer", minimum=0),
     },
     # Two runs writing the same S3 prefixes corrupt each other, and the seed makes
     # a second concurrent run pointless anyway.
@@ -156,6 +166,7 @@ with DAG(
             "run_id": "{{ run_id }}",
             "count": "{{ params.count }}",
             "seed": "{{ params.seed }}",
+            "pdf_count": "{{ params.pdf_count }}",
         },
         outlets=[RAW_ASSET],
     )
