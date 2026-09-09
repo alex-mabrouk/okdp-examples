@@ -319,6 +319,25 @@ def render_pdf(invoice):
     return _avec_output_intent(buffer.getvalue())
 
 
+def _metadata(invoice):
+    """The document properties, stated rather than left to be rediscovered.
+
+    Left to itself the library reads them back out of the XML, and takes the first
+    seller name it finds -- which raises on an invoice whose issuer name was
+    dropped on purpose. We already hold every value it would look for.
+    """
+    emetteur = invoice["fournisseur"].get("nom") or "Émetteur non renseigné"
+    numero = invoice["numero"]
+    return {
+        "author": emetteur,
+        "keywords": "Facture, Factur-X",
+        "title": f"{emetteur}: Facture {numero}",
+        "subject": (
+            f"Facture {numero} du {_date(invoice['date_emission'])} émise par {emetteur}"
+        ),
+    }
+
+
 def render_facturx(invoice, xml, check_xsd=False):
     """The PDF with the CII XML embedded: one Factur-X file.
 
@@ -332,4 +351,5 @@ def render_facturx(invoice, xml, check_xsd=False):
         render_pdf(invoice),
         xml if isinstance(xml, bytes) else xml.encode("utf-8"),
         check_xsd=check_xsd,
+        pdf_metadata=_metadata(invoice),
     )
