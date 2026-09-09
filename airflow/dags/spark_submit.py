@@ -143,16 +143,28 @@ def _configmap_name(script_path):
     return safe_name(script_path.stem.replace("_", "-"), "code")
 
 
-def _ensure_etl_code_configmap(core_api, script_path):
-    """Publish the job source next to the DAG, so nothing else has to deploy it."""
+def _ensure_etl_code_configmap(core_api, script_path, modules=()):
+    """Publish the job source next to the DAG, so nothing else has to deploy it.
+
+    `modules` are files the job imports. They ride in the same ConfigMap and are
+    declared as pyFiles, which is what puts them on sys.path of the executors --
+    mounting them would only serve the driver. Keeping them out of the job lets
+    them be tested on their own, outside a cluster.
+    """
     if not script_path.is_file():
         raise FileNotFoundError(f"Spark job script not found: {script_path}")
+    data = {script_path.name: script_path.read_text(encoding="utf-8")}
+    for module in modules:
+        module = Path(module)
+        if not module.is_file():
+            raise FileNotFoundError(f"Spark job module not found: {module}")
+        data[module.name] = module.read_text(encoding="utf-8")
     name = _configmap_name(script_path)
     body = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
         "metadata": {"name": name, "namespace": NAMESPACE},
-        "data": {script_path.name: script_path.read_text(encoding="utf-8")},
+        "data": data,
     }
     try:
         core_api.create_namespaced_config_map(namespace=NAMESPACE, body=body)
@@ -226,6 +238,8 @@ def submit_and_wait(
     arguments,
     spark_conf=None,
     polaris=False,
+    image=None,
+    modules=(),
     driver_cores=1,
     driver_memory="2g",
     executors=2,
@@ -237,14 +251,15 @@ def submit_and_wait(
     """Run one SparkApplication to completion, or raise.
 
     Returns the name of the application that ran, which is what the Airflow task
-    surfaces in its logs.
+    surfaces in its logs. `image` overrides the platform image for a job whose
+    dependencies it does not carry.
     """
     script_path = Path(script_path)
     config.load_incluster_config()
     core_api = client.CoreV1Api()
     custom_api = client.CustomObjectsApi()
 
-    configmap_name = _ensure_etl_code_configmap(core_api, script_path)
+    configmap_name = _ensure_etl_code_configmap(core_api, script_path, modules)
     app_name = safe_name(name, slug(run_id))
 
     conf = base_spark_conf()
@@ -274,7 +289,7 @@ def submit_and_wait(
         "spec": {
             "type": "Python",
             "mode": "cluster",
-            "image": SPARK_IMAGE,
+            "image": image or SPARK_IMAGE,
             "imagePullPolicy": "IfNotPresent",
             "mainApplicationFile": f"local://{SCRIPT_MOUNT_DIR}/{script_path.name}",
             "arguments": [str(a) for a in arguments],
@@ -282,6 +297,11 @@ def submit_and_wait(
             "restartPolicy": {"type": "Never"},
             "timeToLiveSeconds": 3600,
             "sparkConf": conf,
+            "deps": {
+                "pyFiles": [
+                    f"local://{SCRIPT_MOUNT_DIR}/{Path(m).name}" for m in modules
+                ]
+            },
             "volumes": volumes,
             "driver": driver,
             "executor": executor,
