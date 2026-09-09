@@ -13,6 +13,7 @@ Three roles come out of it:
                       platform can only catch against the real referential
 """
 import argparse
+import os
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
@@ -32,10 +33,11 @@ from pyspark.sql.functions import (
 # this is one of the things the documentation has to state plainly.
 SUPPLIER_MIX = {"GE": 0.15, "ETI": 0.25, "PME": 0.60}
 
-# INSEE legal categories starting with 7 are public bodies: the State, local
+# INSEE legal categories in the 7000s are public bodies: the State, local
 # authorities, public establishments. The AIFE context wants real public buyers,
-# not invented ones.
-PUBLIC_LEGAL_CATEGORY_PREFIX = "7"
+# not invented ones. The column is a bigint in silver, not the four-character
+# string SIRENE publishes, so this is a range and not a prefix.
+PUBLIC_LEGAL_CATEGORY = (7000, 7999)
 
 ACTIVE = "A"
 CLOSED = "F"
@@ -59,6 +61,28 @@ CASTING_COLUMNS = [
     "code_departement",
     "actif",
 ]
+
+
+def build_spark(catalogs):
+    """Everything but the credentials comes from the SparkApplication sparkConf.
+
+    The credential is assembled here from the mounted Secret so the client secret
+    never lands in the SparkApplication manifest -- the same reason the three jobs
+    of the establishments chain each do this too.
+    """
+    client_id = os.getenv("POLARIS_CLIENT_ID", "")
+    client_secret = os.getenv("POLARIS_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        raise RuntimeError("POLARIS_CLIENT_ID / POLARIS_CLIENT_SECRET are not set")
+
+    builder = SparkSession.builder.appName("EInvoicing-Casting").config(
+        "spark.sql.shuffle.partitions", "200"
+    )
+    for catalog in catalogs:
+        builder = builder.config(
+            f"spark.sql.catalog.{catalog}.credential", f"{client_id}:{client_secret}"
+        )
+    return builder.getOrCreate()
 
 
 def parse_args():
@@ -109,7 +133,7 @@ def suppliers(referentiel, count, seed):
 
 def buyers(referentiel, count, seed):
     public = referentiel.filter(
-        col("categorie_juridique").startswith(PUBLIC_LEGAL_CATEGORY_PREFIX)
+        col("categorie_juridique").between(*PUBLIC_LEGAL_CATEGORY)
         & col("nom_etablissement").isNotNull()
         & col("code_postal").isNotNull()
     )
@@ -153,8 +177,8 @@ def closed_suppliers(spark, bronze, count, seed):
         .join(unites, drawn["siren"] == unites["ul_siren"], "left")
         .select(
             lit("fournisseur_cesse").alias("role"),
-            col("siret"),
-            col("siren"),
+            col("siret").cast("string").alias("siret"),
+            col("siren").cast("string").alias("siren"),
             coalesce(
                 col("denominationUniteLegale"),
                 col("enseigne1Etablissement"),
@@ -163,8 +187,8 @@ def closed_suppliers(spark, bronze, count, seed):
             col("activitePrincipaleEtablissement").alias("code_naf"),
             lit(None).cast("string").alias("code_section_naf"),
             lit(None).cast("string").alias("libelle_section_naf"),
-            col("categorieEntreprise").alias("categorie_entreprise"),
-            col("categorieJuridiqueUniteLegale").alias("categorie_juridique"),
+            col("categorieEntreprise").cast("string").alias("categorie_entreprise"),
+            col("categorieJuridiqueUniteLegale").cast("long").alias("categorie_juridique"),
             col("codeCommuneEtablissement").alias("code_commune"),
             col("libelleCommuneEtablissement").alias("libelle_commune"),
             col("codePostalEtablissement").alias("code_postal"),
@@ -205,11 +229,8 @@ def main():
     print(f"Seed:        {args.seed}")
     print("=" * 70)
 
-    spark = (
-        SparkSession.builder.appName("EInvoicing-Casting")
-        .config("spark.sql.shuffle.partitions", "200")
-        .getOrCreate()
-    )
+    # The referential is the only catalog this job touches; it writes plain Parquet.
+    spark = build_spark([args.referentiel.split(".")[0]])
     spark.sparkContext.setLogLevel("WARN")
 
     referentiel = spark.table(args.referentiel)

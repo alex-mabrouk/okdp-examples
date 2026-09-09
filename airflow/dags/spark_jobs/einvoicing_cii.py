@@ -46,6 +46,17 @@ SCHEME_SIREN = "0002"
 
 CENT = Decimal("0.01")
 
+# BT-22, the invoice note. The PDF says SPÉCIMEN across every page, but the XML is
+# what a machine reads and what survives being extracted from the document: it
+# states the same thing in the field the standard provides for it. AAI is the
+# UNTDID 4451 code for general information.
+NOTE_SYNTHETIQUE = (
+    "Document synthétique généré pour une démonstration de la plateforme OKDP. "
+    "Facture fictive, jamais émise. Les entreprises citées proviennent de la base "
+    "SIRENE ouverte."
+)
+NOTE_SUBJECT_CODE = "AAI"
+
 
 def money(value):
     return str(Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP))
@@ -186,6 +197,11 @@ def build(invoice):
         "<ram:IssueDateTime>",
         _tag("udt:DateTimeString", invoice["date_emission"], format="102"),
         "</ram:IssueDateTime>",
+        # The schema sequence puts the note after the issue date, not before it.
+        "<ram:IncludedNote>",
+        _tag("ram:Content", invoice.get("note", NOTE_SYNTHETIQUE)),
+        _tag("ram:SubjectCode", NOTE_SUBJECT_CODE),
+        "</ram:IncludedNote>",
         "</rsm:ExchangedDocument>",
         "<rsm:SupplyChainTradeTransaction>",
     ]
