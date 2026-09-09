@@ -401,10 +401,17 @@ def controle_doublons(factures):
     )
 
 
-def controles_referentiel(factures, referentiel, etats):
-    emetteurs = referentiel.select(
-        F.col("siren").alias("ref_siren"), F.lit(True).alias("siren_connu")
-    ).dropDuplicates(["ref_siren"])
+def controles_referentiel(factures, referentiel, etats, sirens):
+    """Three questions, three sources, and they are not interchangeable.
+
+    "Does this company exist" is asked of the legal-unit registry, not of the
+    active establishments: a company whose only establishment has closed is still
+    a company. Asking the wrong table made every ceased issuer look invented as
+    well -- measured on a run, six of eleven.
+    """
+    emetteurs = sirens.select(
+        F.col("ul_siren").alias("ref_siren"), F.lit(True).alias("siren_connu")
+    )
 
     acheteurs = referentiel.select(
         F.col("siret").alias("ref_siret_acheteur"), F.lit(True).alias("acheteur_connu")
@@ -585,16 +592,20 @@ def main():
         "categorie_entreprise",
         "categorie_juridique",
     )
-    etats = (
-        spark.read.parquet(f"{args.sirene_bronze}/sirene_etablissement/")
-        .select(
-            F.col("siret").alias("etat_siret"),
-            F.col("etatAdministratifEtablissement").alias("etat_etablissement"),
-        )
+    etats = spark.read.parquet(f"{args.sirene_bronze}/sirene_etablissement/").select(
+        F.col("siret").alias("etat_siret"),
+        F.col("etatAdministratifEtablissement").alias("etat_etablissement"),
+    )
+    # The registry of legal units: every company, whatever the state of its
+    # establishments. This is what "the SIREN exists" means.
+    sirens = (
+        spark.read.parquet(f"{args.sirene_bronze}/sirene_unite_legale/")
+        .select(F.col("siren").alias("ul_siren"))
+        .distinct()
     )
 
     factures = enrichir(factures, referentiel).cache()
-    anomalies_ref = controles_referentiel(factures, referentiel, etats)
+    anomalies_ref = controles_referentiel(factures, referentiel, etats, sirens)
 
     toutes = anomalies_format(factures)
     for lot in controles_metier(factures) + anomalies_ref:
