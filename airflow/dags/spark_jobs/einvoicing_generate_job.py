@@ -314,6 +314,34 @@ def s3_client():
     )
 
 
+def purger(client, bucket, prefixes):
+    """Empty the output prefixes before writing a new flow.
+
+    The generator is a fixture producer: running it again replaces the flow, it
+    does not add to it. Nothing here overwrites the previous run on its own,
+    because the month is part of the key and the month a given invoice falls in
+    moves as soon as the draw changes -- so yesterday's FA-00000042 sits under
+    another month and survives untouched. Measured the hard way: 1 005 invoices
+    generated, 1 702 read back, and duplicate counts inflated with them.
+    """
+    total = 0
+    for prefix in prefixes:
+        paginator = client.get_paginator("list_objects_v2")
+        lot = []
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                lot.append({"Key": obj["Key"]})
+                if len(lot) == 1000:
+                    client.delete_objects(Bucket=bucket, Delete={"Objects": lot})
+                    total += len(lot)
+                    lot = []
+        if lot:
+            client.delete_objects(Bucket=bucket, Delete={"Objects": lot})
+            total += len(lot)
+    print(f"Purged {total:,} object(s) from the previous flow")
+    return total
+
+
 def generer_partition(index, rows, params, cast):
     """One partition's worth of invoices, written straight to S3.
 
@@ -411,6 +439,12 @@ def main():
     # unpicklable-free on the other side.
     for module in ("einvoicing_cii.py", "einvoicing_pdf.py", "einvoicing_rules.py"):
         spark.sparkContext.addPyFile(str(Path(__file__).parent / module))
+
+    purger(
+        s3_client(),
+        args.bucket,
+        [f"{args.key_prefix}/", f"{args.pdf_prefix}/"],
+    )
 
     cast = charger_casting(spark, args.casting)
     print(
