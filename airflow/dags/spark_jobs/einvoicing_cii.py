@@ -99,16 +99,21 @@ def _party(element, party, with_vat=True):
     or its VAT number: all three are present here, which is what a real French
     invoice carries anyway.
     """
-    # BR-06 and BR-07 make the name mandatory, and a missing one would otherwise
-    # be escaped into the literal text "None" -- a defect of ours dressed up as an
-    # invoice. The casting guarantees a name; if it ever stops, say so here.
-    if not party.get("nom"):
+    # BR-06 and BR-07 make the name mandatory, so its absence is either a defect of
+    # ours or an anomaly somebody meant to inject, and the two must not look alike:
+    #   None or missing  -- nobody decided this. Raise, rather than escape it into
+    #                       the literal text "None" and ship a bogus invoice
+    #   ""               -- deliberately dropped. Omit the element, which is what a
+    #                       real defective invoice looks like and what BR-06 flags
+    nom = party.get("nom")
+    if nom is None:
         raise ValueError(f"{element}: no name for SIRET {party.get('siret')}")
 
     lines = [f"<{element}>"]
     if party.get("siret"):
         lines.append(_tag("ram:ID", party["siret"], schemeID=SCHEME_SIRET))
-    lines.append(_tag("ram:Name", party["nom"]))
+    if nom != "":
+        lines.append(_tag("ram:Name", nom))
     if party.get("siren"):
         lines.append("<ram:SpecifiedLegalOrganization>")
         lines.append(_tag("ram:ID", party["siren"], schemeID=SCHEME_SIREN))

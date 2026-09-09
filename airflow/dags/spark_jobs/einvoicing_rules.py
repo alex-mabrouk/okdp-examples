@@ -36,6 +36,7 @@ RULES = {
     "FMT-XSD": (FORMAT, BLOQUANTE, "XML non conforme au schéma CII D22B"),
     "FMT-SCHEMATRON": (FORMAT, BLOQUANTE, "Règle EN 16931 en échec"),
     "FMT-PROFIL-INCONNU": (FORMAT, BLOQUANTE, "Profil Factur-X non reconnu"),
+    "FMT-NOM-EMETTEUR": (FORMAT, BLOQUANTE, "Nom de l'émetteur absent (BR-06)"),
     "REF-SIREN-INCONNU": (
         REFERENTIEL,
         BLOQUANTE,
@@ -78,6 +79,7 @@ TAUX_TVA_FR = (20.0, 10.0, 5.5, 2.1, 0.0)
 # silver in order to be counted.
 INJECTABLE = (
     "FMT-SCHEMATRON",
+    "FMT-NOM-EMETTEUR",
     "REF-SIREN-INCONNU",
     "REF-EMETTEUR-CESSE",
     "MET-TOTAUX",
