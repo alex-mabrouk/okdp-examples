@@ -1,20 +1,20 @@
-# Gold Copilot — a text-to-SQL pipe for Open WebUI
+# AI Assistant — a text-to-SQL pipe for Open WebUI
 
 Asks a French question, shows the SQL, runs it on the **gold** catalog, prints the rows.
 The SQL is on screen on purpose: it is what makes the answer auditable.
 
 An Open WebUI **Pipe Function**: it runs inside the existing `open-webui` container and
-appears as a model named *Gold Copilot* in the model picker. Not a Tool (the model would
+appears as a model named *AI Assistant* in the model picker. Not a Tool (the model would
 have to decide to call it) and not a Pipeline (a separate sidecar, disabled in the package).
 The flow is ours, so the SQL always renders and a rejection is visible rather than retried
 out of sight.
 
 ## Install
 
-Open WebUI → *Admin → Functions → +* → paste `gold_copilot.py` → save, then open its
+Open WebUI → *Admin → Functions → +* → paste `ai_assistant.py` → save, then open its
 valves and set `CLIENT_SECRET` (Keycloak client `svc-trino-examples-writer`, from
 `creds-examples-oauth2-trino`). The other valves default to the in-cluster endpoints of
-the `demo` project. Select *Gold Copilot* in a new chat.
+the `demo` project. Select *AI Assistant* in a new chat.
 
 Functions live in Open WebUI's database, not in git: this file is the source of truth and
 a fresh cluster needs the paste again.
