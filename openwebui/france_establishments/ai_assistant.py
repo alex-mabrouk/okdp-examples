@@ -1,6 +1,6 @@
 """
-title: Gold Copilot
-id: gold_copilot
+title: AI Assistant
+id: ai_assistant
 description: Answers a French question about the france_establishments gold catalog by writing SQL, checking it, and running it on Trino.
 author: OKDP
 version: 0.1.0
@@ -160,7 +160,7 @@ class Pipe:
         self._domain = (None, None, 0.0)
 
     def pipes(self):
-        return [{"id": "gold-copilot", "name": "Gold Copilot"}]
+        return [{"id": "ai-assistant", "name": "AI Assistant"}]
 
     def _bearer(self):
         token, expiry = self._token
@@ -273,7 +273,7 @@ class Pipe:
         if not question.strip():
             return "Pose une question sur les établissements français."
         if not self.valves.CLIENT_SECRET:
-            return "CLIENT_SECRET is not set in the Gold Copilot valves."
+            return "CLIENT_SECRET is not set in the AI Assistant valves."
 
         started = time.time()
         try:
