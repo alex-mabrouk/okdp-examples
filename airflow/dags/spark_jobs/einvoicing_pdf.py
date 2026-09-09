@@ -102,7 +102,7 @@ def _euro(value):
 
 
 def _bloc_partie(party, role, styles):
-    lignes = [f"<b>{role}</b>", party.get("nom", "—")]
+    lignes = [f"<b>{role}</b>", party.get("nom") or "—"]
     voie = " ".join(
         str(part) for part in (party.get("numero_voie"), party.get("nom_voie")) if part
     )
