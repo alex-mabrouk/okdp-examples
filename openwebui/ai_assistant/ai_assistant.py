@@ -69,9 +69,16 @@ Notes:
   SMEs, 'indéterminée' when SIRENE does not give the size.
 - Anomalies are counted in invoices: nb_factures on qualite_anomalies is how many invoices
   a control caught, nb_constats how many findings it raised, which is always larger.
-- Any question about a control, an anomaly, a rejected invoice or the SIRENE referential
-  is answered from qualite_anomalies, one row per control. REF-SIREN-INCONNU is the SIREN
-  absent from the referential, REF-EMETTEUR-CESSE the issuer that has ceased trading.
+- Any question about a control, an anomaly, a rejected invoice, a duplicate or the SIRENE
+  referential is answered from qualite_anomalies, one row per control. REF-SIREN-INCONNU is
+  the SIREN absent from the referential, REF-EMETTEUR-CESSE the issuer that has ceased
+  trading, MET-DOUBLON the invoice number already issued. montant_impacte is the amount at
+  stake on a control, and it is the only column that answers "how much is at stake".
+- "Facturer le plus" is about montant_ht, never about the number of invoices.
+- qualite_anomalies has NO time column: it covers the whole flow, and it is still the
+  table for any question that does not name a period. Only a question naming a month or
+  a period goes to facturation_mensuelle, which carries nb_factures_anomalie and
+  nb_factures_bloquantes per month but no breakdown per control.
 - Every table is already aggregated; never divide two of its columns again."""
 
 # Every rule below was added because a measured run failed without it. The two worked
@@ -130,6 +137,8 @@ DOMAINS = {
         # and is never an answer. The prompt asks for the exclusion; this makes it hold.
         "ranking_sentinel": "ZZ",
         "ranking_columns": ("libelle_departement", "code_departement"),
+        # None: part_qpv and part_ess are already percentages here.
+        "fraction_columns": (),
     },
     "einvoicing": {
         "name": "Facturation électronique",
@@ -149,6 +158,10 @@ DOMAINS = {
         ),
         "ranking_sentinel": None,
         "ranking_columns": (),
+        # Stored between 0 and 1, rendered as a percentage. Declared rather than
+        # inferred: the model must never be asked to multiply, and no rule of thumb
+        # tells a fraction from a small percentage.
+        "fraction_columns": ("taux_anomalie", "part_factures"),
     },
 }
 
@@ -236,13 +249,26 @@ def pretty(sql):
     return re.sub(r"\s+(AND|OR)\s+", r"\n  \1 ", out, flags=re.I)
 
 
-def table(columns, rows):
-    def cell(v):
-        return "" if v is None else str(v).replace("|", "\\|")
+def table(columns, rows, fractions=()):
+    """Fractions are rendered as percentages here rather than computed in SQL: the
+    query stays the raw columns, and the model is never asked to multiply."""
+    scaled = {i for i, c in enumerate(columns) if c in fractions}
+
+    def cell(v, i):
+        if v is None:
+            return ""
+        if i in scaled:
+            try:
+                return f"{float(v) * 100:.2f} %".replace(".", ",")
+            except (TypeError, ValueError):
+                pass
+        return str(v).replace("|", "\\|")
 
     head = "| " + " | ".join(columns) + " |"
     rule = "| " + " | ".join("---" for _ in columns) + " |"
-    body = ["| " + " | ".join(cell(v) for v in row) + " |" for row in rows]
+    body = [
+        "| " + " | ".join(cell(v, i) for i, v in enumerate(row)) + " |" for row in rows
+    ]
     return "\n".join([head, rule] + body)
 
 
@@ -416,7 +442,7 @@ class Pipe:
         else:
             if retried:
                 out.append(f"> Première requête rejetée : {retried}. Reprise ci-dessus.")
-            out.append(table(columns, rows))
+            out.append(table(columns, rows, domain["fraction_columns"]))
             out.append(
                 f"*{len(rows)} ligne(s) · {self.valves.MODEL} · {time.time() - started:.1f} s*"
             )
