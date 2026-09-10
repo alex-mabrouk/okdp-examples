@@ -23,7 +23,10 @@ PAR_SECTION = "facturation_par_section_naf"
 ACTEURS = "acteurs"
 QUALITE = "qualite_anomalies"
 CONFORMITE = "conformite_reforme"
-DATASETS_BUILT = {PAR_MOIS, PAR_DEPARTEMENT, PAR_SECTION, ACTEURS, QUALITE, CONFORMITE}
+INSIGHTS = "insights"
+DATASETS_BUILT = {
+    PAR_MOIS, PAR_DEPARTEMENT, PAR_SECTION, ACTEURS, QUALITE, CONFORMITE, INSIGHTS,
+}
 
 
 def dataset_id(name):
@@ -252,6 +255,37 @@ chart("conformite", "📅 Obligation d'émission : ce flux face au calendrier", 
     "stack": True,
 })
 
+# Only the verified rows are shown. The rejected ones stay in the table on purpose
+# -- the check is part of what there is to demonstrate -- but a dashboard is not
+# where a sentence the pipeline refused belongs.
+#
+# The title differs from the establishments panel on purpose: charts are upserted by
+# name across the whole instance, so sharing a title would rebind that chart to this
+# dataset and put e-invoicing sentences on the other dashboard.
+chart("ai_insights", "🤖 Lecture du flux de factures par le modèle local", {
+    "datasource": source(INSIGHTS),
+    "viz_type": "table",
+    "query_mode": "raw",
+    "all_columns": ["category", "scope", "insight", "model"],
+    "column_config": {
+        "category": {"columnWidth": 110},
+        "scope": {"columnWidth": 150},
+        "model": {"columnWidth": 90},
+    },
+    "order_by_cols": ['["category", true]'],
+    "row_limit": 100,
+    "adhoc_filters": [
+        {
+            "clause": "WHERE",
+            "subject": "status",
+            "operator": "==",
+            "comparator": "verified",
+            "expressionType": "SIMPLE",
+        }
+    ],
+    "color_scheme": "supersetColors",
+})
+
 slice_ids = {}
 for key, (name, params) in CHARTS.items():
     existing = db.session.query(Slice).filter_by(slice_name=name).first()
@@ -311,6 +345,7 @@ position = {
 ROWS = [
     ("KPI1", [("kpi_factures", 4, 30), ("kpi_ht", 4, 30), ("kpi_tva", 4, 30)]),
     ("KPI2", [("kpi_ttc", 4, 30), ("kpi_entreprises", 4, 30), ("kpi_anomalies", 4, 30)]),
+    ("IA", [("ai_insights", 12, 60)]),
     ("TEMPOREL", [("volume_mensuel", 6, 55), ("montant_mensuel", 6, 55)]),
     ("TERRITOIRE", [("carte_montant", 6, 70), ("secteurs", 6, 70)]),
     ("ACTEURS", [("top_acteurs", 12, 65)]),
