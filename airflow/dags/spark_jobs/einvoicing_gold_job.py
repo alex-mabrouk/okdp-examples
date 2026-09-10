@@ -42,6 +42,9 @@ TABLES = (
     "acteurs",
     "qualite_anomalies",
     "conformite_reforme",
+    "conformite_par_section_naf",
+    "conformite_par_departement",
+    "emetteurs_en_anomalie",
 )
 
 
@@ -279,6 +282,95 @@ def conformite_reforme(factures):
     )
 
 
+def _conformite(factures, cles, libelles=()):
+    """The reform's calendar read along one more axis.
+
+    `conformite_reforme` answers how much of the flow is already mandatory.
+    Splitting the same question by sector and by department answers a different one:
+    *where* the September 2027 wave lands, and therefore who has to be brought along.
+    Neither is in an invoice -- the size class comes from SIRENE.
+    """
+    obligation = F.create_map(
+        *[item for pair in OBLIGATION_EMISSION.items() for item in (F.lit(pair[0]), F.lit(pair[1]))]
+    )
+    categorie = F.when(
+        F.col("categorie_entreprise_emetteur").isin(list(OBLIGATION_EMISSION)),
+        F.col("categorie_entreprise_emetteur"),
+    ).otherwise(F.lit("NON RENSEIGNÉE"))
+
+    total = factures.count()
+    return (
+        factures.withColumn("categorie_entreprise", categorie)
+        .withColumn(
+            "obligation_emission",
+            F.coalesce(obligation[F.col("categorie_entreprise")], F.lit(OBLIGATION_INCONNUE)),
+        )
+        .filter(F.col(cles[0]).isNotNull())
+        .groupBy(*cles, *libelles, "obligation_emission")
+        .agg(
+            F.count("*").alias("nb_factures"),
+            F.countDistinct("siren_emetteur").alias("nb_emetteurs"),
+            _round(F.sum("montant_ht")).alias("montant_ht"),
+        )
+        .withColumn("part_factures", _part(F.col("nb_factures"), F.lit(total)))
+        .orderBy("obligation_emission", F.col("nb_factures").desc())
+    )
+
+
+def conformite_par_section_naf(factures):
+    return _conformite(
+        factures,
+        ["code_section_naf_emetteur"],
+        ["libelle_section_naf_emetteur"],
+    ).withColumnRenamed("code_section_naf_emetteur", "code_section_naf").withColumnRenamed(
+        "libelle_section_naf_emetteur", "libelle_section_naf"
+    )
+
+
+def conformite_par_departement(factures):
+    return (
+        _conformite(factures, ["code_departement_emetteur"])
+        .withColumnRenamed("code_departement_emetteur", "code_departement")
+        .withColumn("libelle_departement", libelle_departement())
+        .withColumn("code_carte", code_carte())
+    )
+
+
+def emetteurs_en_anomalie(factures, anomalies):
+    """The issuers a control caught, by name.
+
+    A rate convinces nobody in a meeting; a list of company names does. This table
+    exists so that "which companies are invoicing while their establishment has
+    ceased trading" has an answer, and that answer only exists because the platform
+    holds SIRENE next to the flow.
+    """
+    identite = factures.select(
+        "empreinte",
+        F.col("siren_emetteur").alias("siren"),
+        F.col("siret_emetteur").alias("siret"),
+        F.col("nom_emetteur").alias("nom"),
+        F.col("code_departement_emetteur").alias("code_departement"),
+        F.col("code_section_naf_emetteur").alias("code_section_naf"),
+        F.col("categorie_entreprise_emetteur").alias("categorie_entreprise"),
+    )
+    return (
+        anomalies.select("empreinte", "regle_id", "famille", "gravite", "libelle", "montant_ttc")
+        .join(identite, "empreinte")
+        .filter(F.col("siren").isNotNull())
+        .groupBy(
+            "regle_id", "famille", "gravite", "libelle",
+            "siren", "siret", "nom", "code_departement", "code_section_naf",
+            "categorie_entreprise",
+        )
+        .agg(
+            F.count("*").alias("nb_factures"),
+            _round(F.sum("montant_ttc")).alias("montant_ttc"),
+        )
+        .withColumn("libelle_departement", libelle_departement())
+        .orderBy(F.col("montant_ttc").desc())
+    )
+
+
 def main():
     args = parse_args()
 
@@ -306,6 +398,9 @@ def main():
         "acteurs": acteurs(marquees),
         "qualite_anomalies": qualite(marquees, anomalies),
         "conformite_reforme": conformite_reforme(marquees),
+        "conformite_par_section_naf": conformite_par_section_naf(marquees),
+        "conformite_par_departement": conformite_par_departement(marquees),
+        "emetteurs_en_anomalie": emetteurs_en_anomalie(marquees, anomalies),
     }
 
     spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {args.catalog}.{args.namespace}")
@@ -341,6 +436,16 @@ def main():
     spark.table(f"{args.catalog}.{args.namespace}.qualite_anomalies").select(
         "regle_id", "famille", "gravite", "nb_factures", "nb_constats", "montant_impacte"
     ).show(20, truncate=False)
+
+    print("\nWhere the September 2027 wave lands:")
+    spark.table(f"{args.catalog}.{args.namespace}.conformite_par_section_naf").filter(
+        F.col("obligation_emission") == "2027-09-01"
+    ).select("libelle_section_naf", "nb_factures", "nb_emetteurs").show(5, truncate=False)
+
+    print("\nIssuers invoicing while administratively ceased:")
+    spark.table(f"{args.catalog}.{args.namespace}.emetteurs_en_anomalie").filter(
+        F.col("regle_id") == "REF-EMETTEUR-CESSE"
+    ).select("nom", "siren", "nb_factures", "montant_ttc").show(10, truncate=False)
 
     print("\n" + "=" * 70)
     print("Gold completed!")

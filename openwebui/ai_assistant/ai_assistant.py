@@ -59,6 +59,16 @@ qualite_anomalies(regle_id varchar, famille varchar, gravite varchar, libelle va
 conformite_reforme(categorie_entreprise varchar, obligation_emission varchar,
   nb_factures bigint, nb_emetteurs bigint, montant_ht decimal, nb_factures_anomalie bigint,
   part_factures double, taux_anomalie double)
+conformite_par_section_naf(code_section_naf varchar, libelle_section_naf varchar,
+  obligation_emission varchar, nb_factures bigint, nb_emetteurs bigint, montant_ht decimal,
+  part_factures double)
+conformite_par_departement(code_departement varchar, libelle_departement varchar,
+  code_carte varchar, obligation_emission varchar, nb_factures bigint, nb_emetteurs bigint,
+  montant_ht decimal, part_factures double)
+emetteurs_en_anomalie(regle_id varchar, famille varchar, gravite varchar, libelle varchar,
+  siren varchar, siret varchar, nom varchar, code_departement varchar,
+  libelle_departement varchar, code_section_naf varchar, categorie_entreprise varchar,
+  nb_factures bigint, montant_ttc decimal)
 
 Notes:
 - taux_anomalie and part_factures are FRACTIONS between 0 and 1, not percentages.
@@ -69,12 +79,21 @@ Notes:
   SMEs, 'indéterminée' when SIRENE does not give the size.
 - Anomalies are counted in invoices: nb_factures on qualite_anomalies is how many invoices
   a control caught, nb_constats how many findings it raised, which is always larger.
-- Any question about a control, an anomaly, a rejected invoice, a duplicate or the SIRENE
-  referential is answered from qualite_anomalies, one row per control. REF-SIREN-INCONNU is
+- qualite_anomalies is per CONTROL and carries no department, no sector and no month.
+  Crossing anomalies with a department, a sector or a month is answered from
+  facturation_par_departement, facturation_par_section_naf or facturation_mensuelle,
+  which each carry nb_factures_anomalie. Never join two tables to get there.
+- A question about a control, a duplicate or the SIRENE referential, with no territory,
+  sector or period, is answered from qualite_anomalies, one row per control. REF-SIREN-INCONNU is
   the SIREN absent from the referential, REF-EMETTEUR-CESSE the issuer that has ceased
   trading, MET-DOUBLON the invoice number already issued. montant_impacte is the amount at
   stake on a control, and it is the only column that answers "how much is at stake".
 - "Facturer le plus" is about montant_ht, never about the number of invoices.
+- conformite_reforme is the calendar for the whole flow. conformite_par_section_naf and
+  conformite_par_departement are the same calendar by sector and by department: they are
+  what answers where a deadline lands, which sectors or which departments are concerned.
+- emetteurs_en_anomalie names the companies a control caught, one row per company and per
+  control. It is the only table that answers "which companies", with nom and siren.
 - qualite_anomalies has NO time column: it covers the whole flow, and it is still the
   table for any question that does not name a period. Only a question naming a month or
   a period goes to facturation_mensuelle, which carries nb_factures_anomalie and
@@ -117,7 +136,19 @@ Example question: Combien de factures viennent d'entreprises deja soumises a l'o
 Example answer: SELECT categorie_entreprise, nb_factures FROM gold.einvoicing.conformite_reforme WHERE obligation_emission = '2026-09-01'
 
 Example question: Combien de factures ont un SIREN emetteur absent du referentiel ?
-Example answer: SELECT libelle, nb_factures FROM gold.einvoicing.qualite_anomalies WHERE regle_id = 'REF-SIREN-INCONNU'"""
+Example answer: SELECT libelle, nb_factures FROM gold.einvoicing.qualite_anomalies WHERE regle_id = 'REF-SIREN-INCONNU'
+
+Example question: Quelles sont les anomalies bloquantes ?
+Example answer: SELECT regle_id, libelle, nb_factures, montant_impacte FROM gold.einvoicing.qualite_anomalies WHERE gravite = 'bloquante' ORDER BY nb_factures DESC
+
+Example question: Quels departements ont le plus de factures rejetees ?
+Example answer: SELECT libelle_departement, nb_factures, nb_factures_anomalie FROM gold.einvoicing.facturation_par_departement ORDER BY nb_factures_anomalie DESC LIMIT 5
+
+Example question: Quels secteurs comptent le plus de factures qui ne basculeront qu'en septembre 2027 ?
+Example answer: SELECT libelle_section_naf, nb_factures, nb_emetteurs FROM gold.einvoicing.conformite_par_section_naf WHERE obligation_emission = '2027-09-01' ORDER BY nb_factures DESC LIMIT 5
+
+Example question: Quelles entreprises facturent alors que leur etablissement est cesse ?
+Example answer: SELECT nom, siren, nb_factures, montant_ttc FROM gold.einvoicing.emetteurs_en_anomalie WHERE regle_id = 'REF-EMETTEUR-CESSE' ORDER BY montant_ttc DESC LIMIT 10"""
 
 # A domain is a schema the assistant may answer on: what it is called, what it holds,
 # and the columns whose literals are confronted with the real values before the query
@@ -148,13 +179,16 @@ DOMAINS = {
         # Departments, controls and size classes are the three things a question names
         # by hand, and all three are spelled in ways a model gets subtly wrong.
         "domain_query": (
-            "SELECT code_departement, libelle_departement, NULL, NULL, NULL "
+            "SELECT code_departement, libelle_departement, NULL, NULL, NULL, NULL, NULL, NULL "
             "FROM gold.einvoicing.facturation_par_departement "
-            "UNION ALL SELECT NULL, NULL, regle_id, famille, gravite "
-            "FROM gold.einvoicing.qualite_anomalies"
+            "UNION ALL SELECT NULL, NULL, regle_id, famille, gravite, NULL, libelle, NULL "
+            "FROM gold.einvoicing.qualite_anomalies "
+            "UNION ALL SELECT NULL, NULL, NULL, NULL, NULL, obligation_emission, NULL, "
+            "categorie_entreprise FROM gold.einvoicing.conformite_reforme"
         ),
         "domain_columns": (
             "code_departement", "libelle_departement", "regle_id", "famille", "gravite",
+            "obligation_emission", "libelle", "categorie_entreprise",
         ),
         "ranking_sentinel": None,
         "ranking_columns": (),
@@ -199,6 +233,10 @@ def guard(sql, schema):
     refs = [t for pair in found for t in pair if t and t.lower() not in ctes]
     if not refs:
         return False, "no table referenced"
+    if len(set(refs)) > 1 or re.search(r"\bjoin\b", s, re.I):
+        return False, (
+            "every table is already aggregated: answer from a single table, never a join"
+        )
     for ref in refs:
         parts = ref.replace('"', "").split(".")
         if len(parts) != 3 or parts[0].lower() != CATALOG or parts[1].lower() != schema:
@@ -212,9 +250,10 @@ def domain_check(sql, known):
     SQL that answer wrong in silence; nothing else catches them."""
     for column, values in known.items():
         blobs = re.findall(
-            rf"{column}\s*(?:=|in)\s*\(?([^)]*?)(?:\)|\s+(?:and|or|group|order|limit)\b|$)",
+            rf"{column}\s*(?:=|in)\s*\(?([^)\n]*?)"
+            rf"(?:\)|\s+(?:and|or|where|join|on|group|order|limit)\b|$)",
             sql,
-            re.I,
+            re.I | re.M,
         )
         for blob in blobs:
             for literal in re.findall(r"'([^']*)'", blob):
@@ -398,7 +437,7 @@ class Pipe:
             columns, rows = self._sql(sql)
         except Exception as e:
             return sql, None, None, f"Trino refused it: {e}"
-        if not rows:
+        if not rows or all(v is None for row in rows for v in row):
             return sql, columns, rows, "the query returned no row"
         return sql, columns, rows, None
 

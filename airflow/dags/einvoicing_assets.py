@@ -86,6 +86,9 @@ GOLD_TABLES = (
     "acteurs",
     "qualite_anomalies",
     "conformite_reforme",
+    "conformite_par_section_naf",
+    "conformite_par_departement",
+    "emetteurs_en_anomalie",
 )
 
 GOLD_ASSETS = [

@@ -13,8 +13,8 @@ einvoicing_bronze              ◀── the raw asset
 einvoicing_silver              ◀── the bronze asset
   conform                      ──→ silver_einvoicing_{factures,lignes,anomalies}
 einvoicing_gold                ◀── the three silver assets
-  build_indicators             ──→ the six gold tables
-einvoicing_ai                  ◀── the six gold assets
+  build_indicators             ──→ the nine gold tables
+einvoicing_ai                  ◀── the nine gold assets
   write_insights               ──→ gold_einvoicing_{insights_facts,insights}
 ```
 
@@ -81,7 +81,7 @@ sat at 4.1, so the threshold is 8 and the injection 30 times.
 
 Anomalies are counted in invoices, never in findings: one malformed invoice breaks
 four Schematron rules at once, and counting findings would put the rate at 12 %
-where it is 7.8 %.
+where it is 7.75 %.
 
 ## Tables
 
@@ -89,7 +89,7 @@ where it is 7.8 %.
 document received, per line, per finding. Bronze keeps the XML byte for byte with
 its SHA-256 fingerprint, so any figure can be traced back to the file it came from.
 
-`gold.einvoicing` holds the six the dashboard reads:
+`gold.einvoicing` holds the nine the dashboard reads:
 
 | Table | What it answers |
 |---|---|
@@ -99,10 +99,21 @@ its SHA-256 fingerprint, so any figure can be traced back to the file it came fr
 | `acteurs` | issuers and receivers in one table, told apart by `role` |
 | `qualite_anomalies` | one row per control: invoices caught and amount at stake |
 | `conformite_reforme` | the flow split by the reform's deadlines |
+| `conformite_par_section_naf` / `_par_departement` | the same calendar by sector and by department: where the September 2027 wave lands |
+| `emetteurs_en_anomalie` | the companies a control caught, by name and SIREN |
 
 `conformite_reforme` is the table the rest exists for: the issuer's size class comes
 from SIRENE, and the reform keys its September 2026 and September 2027 deadlines on
-it, so the flow splits into what is already mandatory and what is not yet.
+it, so the flow splits into what is already mandatory and what is not yet. Broken down
+by sector, the same calendar answers a different question — which trades still have to
+be brought along — and that one needs the registry, not the invoice.
+
+`emetteurs_en_anomalie` names them. A rate convinces nobody in a meeting; a list of
+companies does, and this list exists only because SIRENE sits next to the flow.
+
+> ⚠️ The companies are real and public, the invoices are not. Any table naming a company
+> next to an anomaly has to say so out loud: no invoice below was ever issued, and no
+> real company ever invoiced from a ceased establishment here.
 
 `einvoicing_ai` adds `insights_facts` and `insights`. Spark computes every figure
 *and* the French sentence asserting it; the local model only rephrases; each

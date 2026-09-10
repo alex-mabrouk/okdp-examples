@@ -34,6 +34,8 @@ def collect_facts(spark, gold):
     acteurs = f"{gold}.acteurs"
     qualite = f"{gold}.qualite_anomalies"
     reforme = f"{gold}.conformite_reforme"
+    reforme_naf = f"{gold}.conformite_par_section_naf"
+    emetteurs = f"{gold}.emetteurs_en_anomalie"
 
     one, rows = queries(spark)
 
@@ -181,6 +183,36 @@ def collect_facts(spark, gold):
                           f"Sur le flux reçu, {n(plus_tard)} factures émanent de PME, qui "
                           f"n'auront l'obligation d'émettre au format électronique qu'au "
                           f"1er septembre 2027."))
+
+        # Where the next deadline lands, which is the planning question the calendar
+        # alone does not answer.
+        vague = one(
+            f"""SELECT libelle_section_naf, nb_factures, nb_emetteurs FROM {reforme_naf}
+                WHERE obligation_emission = '{ECHEANCE_2027}'
+                ORDER BY nb_factures DESC LIMIT 1"""
+        )
+        facts.append(fact("reforme_vague_2027_secteur", "réforme",
+                          vague["libelle_section_naf"],
+                          "secteur portant le plus de factures qui basculeront en 2027",
+                          vague["nb_factures"], "factures",
+                          f"Le secteur « {vague['libelle_section_naf']} » est celui qui compte le "
+                          f"plus de factures encore hors obligation, avec "
+                          f"{n(vague['nb_factures'])} factures émises par "
+                          f"{n(vague['nb_emetteurs'])} entreprises à accompagner d'ici au "
+                          f"1er septembre 2027.",
+                          subject=vague["libelle_section_naf"]))
+
+    cesses = one(
+        f"""SELECT count(*) AS nb_entreprises, coalesce(sum(montant_ttc), 0) AS montant
+            FROM {emetteurs} WHERE regle_id = 'REF-EMETTEUR-CESSE'"""
+    )
+    if cesses["nb_entreprises"]:
+        facts.append(fact("referentiel_entreprises_cessees", "référentiel", "flux reçu",
+                          "entreprises facturant depuis un établissement cessé",
+                          cesses["nb_entreprises"], "entreprises",
+                          f"Le référentiel SIRENE identifie nommément "
+                          f"{n(cesses['nb_entreprises'])} entreprises qui facturent alors que "
+                          f"leur établissement y est déclaré cessé."))
 
     couverture = one(
         f"""SELECT sum(CASE WHEN categorie_entreprise = 'NON RENSEIGNÉE' THEN nb_factures
