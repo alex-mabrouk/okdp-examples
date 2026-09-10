@@ -24,9 +24,23 @@ ACTEURS = "acteurs"
 QUALITE = "qualite_anomalies"
 CONFORMITE = "conformite_reforme"
 INSIGHTS = "insights"
+CONFORMITE_SECTION = "conformite_par_section_naf"
+CONFORMITE_DEPARTEMENT = "conformite_par_departement"
+EMETTEURS = "emetteurs_en_anomalie"
 DATASETS_BUILT = {
     PAR_MOIS, PAR_DEPARTEMENT, PAR_SECTION, ACTEURS, QUALITE, CONFORMITE, INSIGHTS,
+    CONFORMITE_SECTION, CONFORMITE_DEPARTEMENT, EMETTEURS,
 }
+
+ECHEANCE_2027 = [
+    {
+        "clause": "WHERE",
+        "subject": "obligation_emission",
+        "operator": "==",
+        "comparator": "2027-09-01",
+        "expressionType": "SIMPLE",
+    }
+]
 
 
 def dataset_id(name):
@@ -255,6 +269,47 @@ chart("conformite", "📅 Obligation d'émission : ce flux face au calendrier", 
     "stack": True,
 })
 
+# Where the next deadline lands. conformite_reforme says how much of the flow is
+# already mandatory; this says which trades have to be brought along by September 2027,
+# which is a question about the reform rather than about the flow.
+chart("vague_2027", "Septembre 2027 : les secteurs à accompagner", {
+    "datasource": source(CONFORMITE_SECTION),
+    "viz_type": "echarts_timeseries_bar",
+    "x_axis": "libelle_section_naf",
+    "metrics": ["nb_factures_sum", "nb_emetteurs_sum"],
+    "groupby": [],
+    "orientation": "horizontal",
+    "row_limit": 10,
+    "order_desc": True,
+    "adhoc_filters": ECHEANCE_2027,
+    "color_scheme": "supersetColors",
+    "show_legend": True,
+})
+
+# By name, not by rate: what a room remembers is a list of companies, and this list
+# only exists because SIRENE sits next to the flow.
+chart("emetteurs_cesses", "Entreprises facturant depuis un établissement cessé", {
+    "datasource": source(EMETTEURS),
+    "viz_type": "table",
+    "query_mode": "raw",
+    "all_columns": [
+        "nom", "siren", "libelle_departement", "nb_factures", "montant_ttc",
+    ],
+    "column_config": {"nom": {"columnWidth": 260}, "siren": {"columnWidth": 110}},
+    "order_by_cols": ['["montant_ttc", false]'],
+    "row_limit": 25,
+    "adhoc_filters": [
+        {
+            "clause": "WHERE",
+            "subject": "regle_id",
+            "operator": "==",
+            "comparator": "REF-EMETTEUR-CESSE",
+            "expressionType": "SIMPLE",
+        }
+    ],
+    "color_scheme": "supersetColors",
+})
+
 # Only the verified rows are shown. The rejected ones stay in the table on purpose
 # -- the check is part of what there is to demonstrate -- but a dashboard is not
 # where a sentence the pipeline refused belongs.
@@ -351,6 +406,7 @@ ROWS = [
     ("ACTEURS", [("top_acteurs", 12, 65)]),
     ("QUALITE", [("anomalies_type", 6, 60), ("anomalies_montant", 6, 60)]),
     ("REFORME", [("anomalies_mensuel", 6, 55), ("conformite", 6, 55)]),
+    ("VAGUE", [("vague_2027", 6, 65), ("emetteurs_cesses", 6, 65)]),
 ]
 grid_children = []
 for row_id, cells in ROWS:

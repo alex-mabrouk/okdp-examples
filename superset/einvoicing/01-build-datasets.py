@@ -196,6 +196,63 @@ SPECS = {
             ("nb_emetteurs_sum", "SUM(nb_emetteurs)", "Émetteurs", INT),
         ],
     ),
+    # The same calendar as conformite_reforme, read by sector and by department: not
+    # "how much is already mandatory" but *where* the September 2027 wave lands.
+    "conformite_par_section_naf": (
+        [
+            ("code_section_naf", "VARCHAR", False),
+            ("libelle_section_naf", "VARCHAR", False),
+            ("obligation_emission", "VARCHAR", False),
+            ("nb_factures", "BIGINT", False),
+            ("nb_emetteurs", "BIGINT", False),
+            ("montant_ht", "DECIMAL", False),
+            ("part_factures", "DOUBLE", False),
+        ],
+        [
+            ("nb_factures_sum", "SUM(nb_factures)", "Factures reçues", INT),
+            ("nb_emetteurs_sum", "SUM(nb_emetteurs)", "Émetteurs", INT),
+            ("montant_ht_sum", "SUM(montant_ht)", "Montant HT (€)", COMPACT),
+        ],
+    ),
+    "conformite_par_departement": (
+        [
+            ("code_departement", "VARCHAR", False),
+            ("libelle_departement", "VARCHAR", False),
+            ("code_carte", "VARCHAR", False),
+            ("obligation_emission", "VARCHAR", False),
+            ("nb_factures", "BIGINT", False),
+            ("nb_emetteurs", "BIGINT", False),
+            ("montant_ht", "DECIMAL", False),
+            ("part_factures", "DOUBLE", False),
+        ],
+        [
+            ("nb_factures_sum", "SUM(nb_factures)", "Factures reçues", INT),
+            ("nb_emetteurs_sum", "SUM(nb_emetteurs)", "Émetteurs", INT),
+        ],
+    ),
+    # The companies a control caught, by name. A rate convinces nobody in a meeting.
+    "emetteurs_en_anomalie": (
+        [
+            ("regle_id", "VARCHAR", False),
+            ("famille", "VARCHAR", False),
+            ("gravite", "VARCHAR", False),
+            ("libelle", "VARCHAR", False),
+            ("siren", "VARCHAR", False),
+            ("siret", "VARCHAR", False),
+            ("nom", "VARCHAR", False),
+            ("code_departement", "VARCHAR", False),
+            ("libelle_departement", "VARCHAR", False),
+            ("code_section_naf", "VARCHAR", False),
+            ("categorie_entreprise", "VARCHAR", False),
+            ("nb_factures", "BIGINT", False),
+            ("montant_ttc", "DECIMAL", False),
+        ],
+        [
+            ("nb_factures_sum", "SUM(nb_factures)", "Factures", INT),
+            ("montant_ttc_sum", "SUM(montant_ttc)", "Montant TTC (€)", COMPACT),
+            ("nb_entreprises", "COUNT(DISTINCT siren)", "Entreprises", INT),
+        ],
+    ),
     # Sentences written by the local model from the figures Spark computed, with the
     # figure kept beside them: the panel shows what was asserted and what was
     # published from it. The establishments chain publishes an `insights` too, which
