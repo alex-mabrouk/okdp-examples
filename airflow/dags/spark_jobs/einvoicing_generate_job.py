@@ -21,6 +21,7 @@ Two of them are worth reading twice:
                          of ours
 """
 import argparse
+import math
 import os
 import random
 from datetime import date, timedelta
@@ -64,6 +65,23 @@ DELAIS_PAIEMENT = (30, 45, 60)
 
 # Invoicing slows in August. Nothing else in the year is worth modelling.
 CREUX_AOUT = 0.45
+
+# The reform is a calendar, and a calendar moves volumes. Reception became mandatory
+# for every company on 1 September 2026, and issuing followed for large companies and
+# mid-caps, so the flow climbs through 2026 instead of sitting flat -- firms onboard
+# ahead of the date rather than on it.
+#
+# Modelled on purpose and declared as such, exactly like the injected anomalies: a
+# stationary flow makes every month-over-month figure pure noise. Measured on the flat
+# version: 20.6 % mean swing from one month to the next, 58 % at worst, on ~42 invoices
+# a month. There was nothing to read, so there was nothing to compare.
+OBLIGATION_RECEPTION = date(2026, 9, 1)
+# What the window carries before the climb: a pilot flow of voluntary early adopters.
+PALIER_INITIAL = 0.15
+# Where the curve crosses half its climb, in months before the deadline, and how
+# spread out that climb is.
+RAMPE_CENTRE = 8.0
+RAMPE_LARGEUR = 3.0
 
 # How far an abnormal invoice overshoots. Measured, not guessed: no legitimate
 # invoice in the flow exceeds 5.4 times the median of its sector, so thirty times
@@ -145,17 +163,42 @@ def tirer_taux(rng):
     return 20.0
 
 
-def tirer_date(rng, months):
-    """Uniform over the window, minus a dip in August."""
+def poids_mois(annee, mois):
+    """What a month carries relative to the deadline month, from the reform's ramp."""
+    ecart = (OBLIGATION_RECEPTION.year - annee) * 12 + OBLIGATION_RECEPTION.month - mois
+    if ecart <= 0:
+        return 1.0
+    montee = 1.0 / (1.0 + math.exp((ecart - RAMPE_CENTRE) / RAMPE_LARGEUR))
+    return PALIER_INITIAL + (1.0 - PALIER_INITIAL) * montee
+
+
+def fenetre(months):
+    """The months the flow spreads over, and the cumulative weight of each.
+
+    August is folded in here as a weight rather than drawn and rejected: same dip,
+    one code path, and the whole distribution is readable in one place.
+    """
     today = date.today().replace(day=1)
-    while True:
-        back = rng.randint(1, months)
+    mois, cumul = [], 0.0
+    for back in range(1, months + 1):
         month = today.month - back
         year = today.year + (month - 1) // 12
         month = (month - 1) % 12 + 1
-        if month == 8 and rng.random() > CREUX_AOUT:
-            continue
-        return date(year, month, rng.randint(1, 28))
+        poids = poids_mois(year, month) * (CREUX_AOUT if month == 8 else 1.0)
+        cumul += poids
+        mois.append((year, month, cumul))
+    return mois, cumul
+
+
+def tirer_date(rng, calendrier):
+    """One date, drawn from the weighted window rather than uniformly."""
+    mois, total = calendrier
+    tirage = rng.random() * total
+    for year, month, cumul in mois:
+        if tirage <= cumul:
+            return date(year, month, rng.randint(1, 28))
+    year, month, _ = mois[-1]
+    return date(year, month, rng.randint(1, 28))
 
 
 def batir_lignes(rng, section_naf):
@@ -207,8 +250,8 @@ def totaliser(invoice):
     return invoice
 
 
-def batir_facture(rng, numero, fournisseur, acheteur, months, extended_rate):
-    emission = tirer_date(rng, months)
+def batir_facture(rng, numero, fournisseur, acheteur, calendrier, extended_rate):
+    emission = tirer_date(rng, calendrier)
     echeance = emission + timedelta(days=DELAIS_PAIEMENT[rng.randrange(len(DELAIS_PAIEMENT))])
     profil = (
         "EXTENDED-CTC-FR" if rng.random() < extended_rate else "EN16931"
@@ -358,13 +401,15 @@ def generer_partition(index, rows, params, cast):
     rng = random.Random(params["seed"] * 1_000_003 + index)
     client = s3_client()
     fournisseurs, acheteurs, cesses = cast
+    # Built once per partition: the window is the same for every invoice in it.
+    calendrier = fenetre(params["months"])
 
     for row in rows:
         numero = f"FA-{row.id:08d}"
         fournisseur = fournisseurs[rng.randrange(len(fournisseurs))]
         acheteur = acheteurs[rng.randrange(len(acheteurs))]
         invoice = batir_facture(
-            rng, numero, fournisseur, acheteur, params["months"], params["extended_rate"]
+            rng, numero, fournisseur, acheteur, calendrier, params["extended_rate"]
         )
 
         regle_id = None

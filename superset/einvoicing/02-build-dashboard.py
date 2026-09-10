@@ -75,6 +75,35 @@ def kpi(key, name, dataset, metric, subheader, number_format, filters=None):
     )
 
 
+def kpi_dynamique(key, name, metric, subheader, number_format):
+    """The latest month, and how it compares to the same month a year earlier.
+
+    Year on year, never month on month: the flow dips by half every August, so a
+    month-over-month figure reads -53 % and means "it is August". A twelve-period
+    lag compares like with like.
+    """
+    chart(
+        key,
+        name,
+        {
+            "datasource": source(PAR_MOIS),
+            "viz_type": "big_number",
+            "metric": metric,
+            "granularity_sqla": "mois_date",
+            "time_grain_sqla": "P1M",
+            "compare_lag": 12,
+            "compare_suffix": "sur un an",
+            "show_trend_line": True,
+            "start_y_axis_at_zero": True,
+            "subheader": subheader,
+            "y_axis_format": number_format,
+            "header_font_size": 0.4,
+            "subheader_font_size": 0.15,
+            "adhoc_filters": [],
+        },
+    )
+
+
 def egal(subject, value):
     return {
         "clause": "WHERE",
@@ -101,6 +130,19 @@ kpi("kpi_entreprises", "🏢 Entreprises", ACTEURS, "nb_entreprises",
     "Émetteurs distincts", ",d", [egal("role", "émetteur")])
 kpi("kpi_anomalies", "⚠️ Taux d'anomalie", PAR_MOIS, "taux_anomalie_pond",
     "Factures portant au moins un constat", ".1%")
+# The reform read on the flow, as a headline figure rather than a chart to decode.
+kpi("kpi_obligation", "📅 Déjà soumises à l'obligation", CONFORMITE, "nb_factures_sum",
+    "Émetteurs GE et ETI, depuis le 1er septembre 2026", ",d",
+    [egal("obligation_emission", "2026-09-01")])
+
+# The flow is not flat: the reform makes it climb. These three read the last month
+# against the same month a year earlier.
+kpi_dynamique("dyn_factures", "📄 Factures du dernier mois", "nb_factures_sum",
+              "Dernier mois clos, comparé à un an plus tôt", ",d")
+kpi_dynamique("dyn_ht", "💶 Montant HT du dernier mois", "montant_ht_sum",
+              "Dernier mois clos, comparé à un an plus tôt", ".3~s")
+kpi_dynamique("dyn_anomalies", "⚠️ Taux d'anomalie du dernier mois", "taux_anomalie_pond",
+              "Dernier mois clos, comparé à un an plus tôt", ".1%")
 
 chart("volume_mensuel", "📊 Factures reçues par mois", {
     "datasource": source(PAR_MOIS),
@@ -397,16 +439,25 @@ position = {
     "GRID_ID": {"type": "GRID", "id": "GRID_ID", "children": [], "parents": ["ROOT_ID"]},
     "HEADER_ID": {"type": "HEADER", "id": "HEADER_ID", "meta": {"text": TITLE}},
 }
+# Three levels of reading, in this order: what the flow weighs, what the reform says
+# of it, what the controls found in it. The raw detail goes last -- it is evidence to
+# drill into, not the opening screen.
 ROWS = [
-    ("KPI1", [("kpi_factures", 4, 30), ("kpi_ht", 4, 30), ("kpi_tva", 4, 30)]),
-    ("KPI2", [("kpi_ttc", 4, 30), ("kpi_entreprises", 4, 30), ("kpi_anomalies", 4, 30)]),
-    ("IA", [("ai_insights", 12, 60)]),
+    # 1. What the flow weighs, and how it moves.
+    ("VOLUMETRIE", [("kpi_factures", 3, 30), ("kpi_ht", 3, 30),
+                    ("kpi_anomalies", 3, 30), ("kpi_obligation", 3, 30)]),
+    ("DYNAMIQUE", [("dyn_factures", 4, 32), ("dyn_ht", 4, 32), ("dyn_anomalies", 4, 32)]),
     ("TEMPOREL", [("volume_mensuel", 6, 55), ("montant_mensuel", 6, 55)]),
-    ("TERRITOIRE", [("carte_montant", 6, 70), ("secteurs", 6, 70)]),
+    # 2. The reform read on this flow: the reason the rest exists.
+    ("REFORME", [("conformite", 6, 60), ("vague_2027", 6, 60)]),
+    # 3. What the controls found, ending on the companies they name.
+    ("CONTROLE", [("anomalies_montant", 6, 60), ("emetteurs_cesses", 6, 60)]),
+    ("IA", [("ai_insights", 12, 60)]),
+    # The evidence, for whoever wants to go down to it.
+    ("DETAIL", [("carte_montant", 6, 70), ("secteurs", 6, 70)]),
+    ("DETAIL2", [("anomalies_type", 6, 60), ("anomalies_mensuel", 6, 60)]),
     ("ACTEURS", [("top_acteurs", 12, 65)]),
-    ("QUALITE", [("anomalies_type", 6, 60), ("anomalies_montant", 6, 60)]),
-    ("REFORME", [("anomalies_mensuel", 6, 55), ("conformite", 6, 55)]),
-    ("VAGUE", [("vague_2027", 6, 65), ("emetteurs_cesses", 6, 65)]),
+    ("APPOINT", [("kpi_tva", 4, 30), ("kpi_ttc", 4, 30), ("kpi_entreprises", 4, 30)]),
 ]
 grid_children = []
 for row_id, cells in ROWS:

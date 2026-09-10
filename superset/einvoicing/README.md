@@ -1,8 +1,12 @@
 # Superset dashboard — facturation électronique
 
 Reproducible build of the AIFE demo dashboard on the **gold** catalog (Iceberg via
-Polaris, queried through Trino): one database connection, seven datasets, 16 charts
-and one dashboard. Idempotent — upserts by name, safe to re-run.
+Polaris, queried through Trino): one database connection, ten datasets, 22 charts and
+one dashboard. Idempotent — upserts by name, safe to re-run.
+
+Laid out in three levels of reading, in this order: what the flow weighs and how it
+moves, what the reform says of it, what the controls found in it. The raw detail comes
+last — it is evidence to drill into, not the opening screen.
 
 > The dashboard lives only in Superset's metadata database, so a fresh cluster has
 > to rebuild it. These scripts are the source of truth: `export-dashboards` needs a
@@ -49,6 +53,14 @@ table so the gap is visible rather than hidden.
 `montant_impacte` is what makes that table readable without knowing the rule
 identifiers: on the duplicates line, it answers "how much would have been paid
 twice".
+
+## Year on year, never month on month
+
+The three dynamic KPIs read the last closed month against the same month a year
+earlier, with a twelve-period lag. August is half a normal month by design, so a
+month-over-month reading of it announces -53 % and means "it is August". The lag
+compares like with like: +221 % on the measured flow, which is the ramp the reform
+produces.
 
 ## The AI panel
 

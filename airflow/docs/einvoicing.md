@@ -28,6 +28,7 @@ the other chain republished.
 |---|---|
 | The companies: SIRET, SIREN, name, NAF, address, size class, administrative state | Every invoice, amount, date, line and payment term |
 | The reform's calendar and its size-class tiering | The anomalies, injected on purpose |
+| | The ramp-up, modelled on purpose |
 
 No invoice below was ever issued. The point of drawing the parties from SIRENE is
 that the checks then have something real to fail against.
@@ -57,6 +58,23 @@ the random sequence changes, so without the purge runs accumulate instead of
 overwriting.
 
 Bronze, silver, gold and the AI job then follow on their own, through the assets.
+
+## The ramp-up is modelled, and that is the point
+
+The flow is not spread evenly over the window. It climbs, because the reform makes it
+climb: reception became mandatory for every company on 1 September 2026 and issuing
+followed for large companies and mid-caps, so firms onboard ahead of the date rather
+than on it. A logistic curve from a pilot level to the deadline, times a dip every
+August, gives roughly six times more invoices in the last month than in the first.
+
+This is declared, exactly like the injected anomalies, and it was measured before being
+chosen. On the flat version the flow was stationary, so every month-over-month figure
+was noise: 20.6 % mean swing from one month to the next, 58 % at worst, on about 42
+invoices a month. There was nothing to read, so there was nothing to compare.
+
+> Compare year on year, never month on month. August is half a normal month by design,
+> so a month-over-month reading of it says -53 % and means "it is August". The dashboard
+> KPIs use a twelve-period lag.
 
 ## What is checked
 
