@@ -407,7 +407,11 @@ class Pipe:
             json={
                 "model": self.valves.MODEL,
                 "stream": False,
-                "options": {"temperature": 0.0},
+                # The einvoicing schema and its worked examples reach 3 100 tokens,
+                # which leaves no room to generate inside ollama's 4096 default: the
+                # prompt gets truncated mid-run and the model loses its instructions.
+                # num_predict bounds a runaway to seconds instead of the 180 s timeout.
+                "options": {"temperature": 0.0, "num_ctx": 8192, "num_predict": 256},
                 "format": {
                     "type": "object",
                     "properties": {"sql": {"type": "string"}},
