@@ -65,6 +65,13 @@ DELAIS_PAIEMENT = (30, 45, 60)
 # Invoicing slows in August. Nothing else in the year is worth modelling.
 CREUX_AOUT = 0.45
 
+# How far an abnormal invoice overshoots. Measured, not guessed: no legitimate
+# invoice in the flow exceeds 5.4 times the median of its sector, so thirty times
+# is unmistakably abnormal. A hundred, which this was, made two invoices out of a
+# thousand carry a quarter of the total amount and flattened every chart drawn
+# from it -- the map, the monthly amounts and the sector ranking alike.
+FACTEUR_ANORMAL = 30
+
 TRUTH_SCHEMA = StructType(
     [
         StructField("numero_facture", StringType(), False),
@@ -287,7 +294,7 @@ def injecter(rng, invoice, regle_id, cesses):
 
     elif regle_id == "STA-MONTANT-ABERRANT":
         for ligne in invoice["lignes"]:
-            ligne["quantite"] *= 100
+            ligne["quantite"] *= FACTEUR_ANORMAL
             ligne["montant_ht"] = round(ligne["prix_unitaire"] * ligne["quantite"], 2)
         totaliser(invoice)
 
