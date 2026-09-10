@@ -196,9 +196,28 @@ SPECS = {
             ("nb_emetteurs_sum", "SUM(nb_emetteurs)", "Émetteurs", INT),
         ],
     ),
+    # Sentences written by the local model from the figures Spark computed, with the
+    # figure kept beside them: the panel shows what was asserted and what was
+    # published from it. The establishments chain publishes an `insights` too, which
+    # is why every lookup here is keyed on the schema as well as the name.
+    "insights": (
+        [
+            ("category", "VARCHAR", False),
+            ("scope", "VARCHAR", False),
+            ("subject", "VARCHAR", False),
+            ("metric", "VARCHAR", False),
+            ("claim", "VARCHAR", False),
+            ("insight", "VARCHAR", False),
+            ("status", "VARCHAR", False),
+            ("model", "VARCHAR", False),
+            ("run_id", "VARCHAR", False),
+            ("generated_at", "TIMESTAMP", True),
+        ],
+        [("nb_insights", "COUNT(*)", "Insights", INT)],
+    ),
 }
 
-DTTM_COLUMN = {"facturation_mensuelle": "mois_date"}
+DTTM_COLUMN = {"facturation_mensuelle": "mois_date", "insights": "generated_at"}
 
 
 def upsert_dataset(dbobj, name, columns, metrics):

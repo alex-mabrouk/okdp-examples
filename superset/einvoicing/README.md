@@ -1,7 +1,7 @@
 # Superset dashboard — facturation électronique
 
 Reproducible build of the AIFE demo dashboard on the **gold** catalog (Iceberg via
-Polaris, queried through Trino): one database connection, six datasets, 15 charts
+Polaris, queried through Trino): one database connection, seven datasets, 16 charts
 and one dashboard. Idempotent — upserts by name, safe to re-run.
 
 > The dashboard lives only in Superset's metadata database, so a fresh cluster has
@@ -26,9 +26,14 @@ Then open `https://superset-demo.okdp.sandbox/superset/dashboard/einvoicing/`.
 ## Two schemas, one database
 
 The establishments chain publishes its own datasets through the same `trino-gold`
-connection. Datasets here are therefore looked up by **schema and name**, and the
-final sweep only walks the `einvoicing` schema: keying on the name alone would let
-the two chains adopt each other's tables the day they both publish an `insights`.
+connection, and both chains publish an `insights`. Datasets are therefore looked up
+by **schema and name**, and the final sweep only walks the `einvoicing` schema.
+
+Charts have no schema to key on: `Slice` is upserted by title across the whole
+instance. So the AI panel here is titled *Lecture du flux de factures par le modèle
+local* and the establishments one *Lecture des indicateurs par le modèle local* —
+sharing a title would rebind one chart to the other's dataset and leave each
+dashboard showing the other's sentences.
 
 The `Country Map` traps are the same ones the establishments dashboard documents —
 it keys on `code_carte` (`FR-<code>`, overseas by ISO letters), and any categorical
@@ -37,13 +42,20 @@ colour scheme makes it colour by department id instead of by the metric.
 ## Anomalies are counted in invoices
 
 One malformed invoice breaks four Schematron rules at once. Measured on a run of
-1 006 documents: **118 findings for 72 invoices**. Every rate on the dashboard is
+1 006 documents: **110 findings for 72 invoices**. Every rate on the dashboard is
 computed on invoices, and `nb_constats` sits next to `nb_factures` in the quality
 table so the gap is visible rather than hidden.
 
 `montant_impacte` is what makes that table readable without knowing the rule
 identifiers: on the duplicates line, it answers "how much would have been paid
 twice".
+
+## The AI panel
+
+`einvoicing_ai` publishes `insights`, and the panel shows only `status = 'verified'`.
+The rejected sentences stay in the table on purpose — the check is part of what there
+is to demonstrate — but a dashboard is not where a sentence the pipeline refused
+belongs.
 
 ## Why the reform chart is the one that matters
 
