@@ -122,6 +122,9 @@ def par_mois(factures):
             "taux_anomalie", _part(F.col("nb_factures_anomalie"), F.col("nb_factures"))
         )
         .withColumn("montant_moyen", _round(F.col("montant_ht") / F.col("nb_factures")))
+        # Superset needs a temporal column to draw a time axis, and `mois` is the
+        # partition key, a string. The first of the month is the month.
+        .withColumn("mois_date", F.to_date(F.concat(F.col("mois"), F.lit("-01"))))
         .orderBy("mois")
     )
 
