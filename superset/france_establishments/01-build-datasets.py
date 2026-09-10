@@ -154,9 +154,12 @@ DTTM_COLUMN = {"creations_par_mois": "mois_creation", "insights": "generated_at"
 
 
 def upsert_dataset(dbobj, name, columns, metrics):
+    # Looked up by schema as well as by name: the e-invoicing chain publishes its
+    # own datasets in the same database, and both schemas hold an `insights`. Without
+    # the schema this hijacks whichever row comes first and repoints it here.
     table = (
         db.session.query(SqlaTable)
-        .filter_by(table_name=name, database_id=dbobj.id)
+        .filter_by(table_name=name, database_id=dbobj.id, schema=SCHEMA)
         .first()
     )
     if not table:
