@@ -1,7 +1,7 @@
 """
-France establishments - gold indicators
-Aggregates the silver establishments into the dashboard tables and publishes them
-as Iceberg tables in the Polaris gold catalog.
+E-invoicing - gold indicators
+Aggregates the checked invoices into the six dashboard tables, and publishes them
+as Iceberg tables in the gold catalog.
 """
 import sys
 from datetime import datetime, timedelta
@@ -15,21 +15,20 @@ sys.path.append(str(Path(__file__).parent))
 import spark_submit
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
-from france_establishments_assets import (
-    BRONZE_PREFIX,
+from einvoicing_assets import (
     GOLD_ASSETS,
     GOLD_CATALOG,
     GOLD_NAMESPACE,
-    SILVER_ASSET,
+    PIPELINE,
+    SILVER_ASSETS,
     SILVER_CATALOG,
     SILVER_NAMESPACE,
-    SILVER_TABLE,
 )
 
 JOBS = Path(__file__).parent / "spark_jobs"
-SCRIPT_PATH = JOBS / "france_establishments_gold_job.py"
-# The department nomenclature is shared with the einvoicing chain, so that a
-# dashboard filter means the same thing on both.
+SCRIPT_PATH = JOBS / "einvoicing_gold_job.py"
+# The department nomenclature is shared with the establishments chain, so a filter
+# on "Ariège" means the same thing on either dashboard.
 MODULES = (JOBS / "france_departements.py",)
 
 default_args = {
@@ -44,17 +43,16 @@ default_args = {
 def aggregate(run_id):
     # Gold reads one Polaris catalog and writes another, so both are declared.
     conf = spark_submit.iceberg_catalog_conf(SILVER_CATALOG, GOLD_CATALOG)
-    conf["spark.sql.shuffle.partitions"] = "200"
+    conf["spark.sql.shuffle.partitions"] = "64"
 
     app = spark_submit.submit_and_wait(
-        name=f"{BRONZE_PREFIX}-gold",
+        name=f"{PIPELINE}-gold",
         run_id=run_id,
         script_path=SCRIPT_PATH,
         modules=MODULES,
         arguments=[
             "--source-catalog", SILVER_CATALOG,
             "--source-namespace", SILVER_NAMESPACE,
-            "--source-table", SILVER_TABLE,
             "--catalog", GOLD_CATALOG,
             "--namespace", GOLD_NAMESPACE,
             "--run-id", spark_submit.slug(run_id),
@@ -71,16 +69,14 @@ def aggregate(run_id):
 
 
 with DAG(
-    dag_id="france_establishments_gold",
+    dag_id="einvoicing_gold",
     default_args=default_args,
-    description="Aggregates the silver establishments into the dashboard tables",
-    # Runs as soon as silver publishes a new snapshot.
-    schedule=[SILVER_ASSET],
+    description="Aggregates the checked invoices into the dashboard tables",
+    # Runs as soon as silver publishes a new snapshot of all three tables.
+    schedule=list(SILVER_ASSETS.values()),
     catchup=False,
-    # Two runs writing the same S3 prefixes or the same Iceberg tables corrupt
-    # each other; the chain has nothing to gain from overlapping.
     max_active_runs=1,
-    tags=["france-establishments", "gold", "iceberg", "polaris", "spark", "etl"],
+    tags=["einvoicing", "gold", "iceberg", "polaris", "spark", "etl"],
 ) as dag:
     PythonOperator(
         task_id="build_indicators",
