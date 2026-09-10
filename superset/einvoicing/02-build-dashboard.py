@@ -130,10 +130,26 @@ kpi("kpi_entreprises", "🏢 Entreprises", ACTEURS, "nb_entreprises",
     "Émetteurs distincts", ",d", [egal("role", "émetteur")])
 kpi("kpi_anomalies", "⚠️ Taux d'anomalie", PAR_MOIS, "taux_anomalie_pond",
     "Factures portant au moins un constat", ".1%")
-# The reform read on the flow, as a headline figure rather than a chart to decode.
-kpi("kpi_obligation", "📅 Déjà soumises à l'obligation", CONFORMITE, "nb_factures_sum",
-    "Émetteurs GE et ETI, depuis le 1er septembre 2026", ",d",
+# The companies the referential catches, counted rather than counted by hand: the table
+# below names them, this says how many there are.
+kpi("kpi_cesses", "🚫 Entreprises cessées", EMETTEURS, "nb_entreprises",
+    "Facturent depuis un établissement administrativement cessé", ",d",
+    [egal("regle_id", "REF-EMETTEUR-CESSE")])
+
+# The two deadlines side by side, each with its own figure. A single "404" tile was a
+# number with no scale: what gives it meaning is the 582 still to come, and that one was
+# only readable by measuring a bar.
+#
+# Two tiles rather than one two-bar chart: plotting a column and grouping on the same
+# column is rejected by Superset ("duplicate column label"), and every other way of
+# colouring one bar differently costs more than the distinction is worth. The wording
+# carries it instead -- "déjà" against "à raccorder d'ici".
+kpi("kpi_obligation_2026", "📅 Déjà soumises à l'obligation", CONFORMITE,
+    "nb_factures_sum", "Émetteurs GE et ETI, depuis le 1er septembre 2026", ",d",
     [egal("obligation_emission", "2026-09-01")])
+kpi("kpi_obligation_2027", "🕓 À raccorder d'ici septembre 2027", CONFORMITE,
+    "nb_factures_sum", "Émetteurs PME, échéance du 1er septembre 2027 — pas encore en vigueur",
+    ",d", [egal("obligation_emission", "2027-09-01")])
 
 # The flow is not flat: the reform makes it climb. These three read the last month
 # against the same month a year earlier.
@@ -383,6 +399,33 @@ chart("ai_insights", "🤖 Lecture du flux de factures par le modèle local", {
     "color_scheme": "supersetColors",
 })
 
+def verifier_labels(charts):
+    """A column may not appear twice in one query, whatever the role it plays.
+
+    Plotting `obligation_emission` and grouping on it too is rejected at render time
+    with "Duplicate column/metric labels", which is a blank chart on the dashboard and
+    nothing at build time. Failing here instead costs one second and never ships.
+    """
+    for key, (name, params) in charts.items():
+        etiquettes = []
+        axe = params.get("x_axis")
+        if isinstance(axe, str):
+            etiquettes.append(axe)
+        for champ in ("groupby", "all_columns", "metrics"):
+            for valeur in params.get(champ) or []:
+                if isinstance(valeur, str):
+                    etiquettes.append(valeur)
+                elif isinstance(valeur, dict):
+                    etiquettes.append(valeur.get("label") or valeur.get("column_name"))
+        doublons = {e for e in etiquettes if e and etiquettes.count(e) > 1}
+        if doublons:
+            raise SystemExit(
+                f"chart {key} ({name}): label used twice -> {sorted(doublons)}"
+            )
+
+
+verifier_labels(CHARTS)
+
 slice_ids = {}
 for key, (name, params) in CHARTS.items():
     existing = db.session.query(Slice).filter_by(slice_name=name).first()
@@ -445,17 +488,20 @@ position = {
 ROWS = [
     # 1. What the flow weighs, and how it moves.
     ("VOLUMETRIE", [("kpi_factures", 3, 30), ("kpi_ht", 3, 30),
-                    ("kpi_anomalies", 3, 30), ("kpi_obligation", 3, 30)]),
+                    ("kpi_anomalies", 3, 30), ("kpi_cesses", 3, 30)]),
     ("DYNAMIQUE", [("dyn_factures", 4, 32), ("dyn_ht", 4, 32), ("dyn_anomalies", 4, 32)]),
     ("TEMPOREL", [("volume_mensuel", 6, 55), ("montant_mensuel", 6, 55)]),
-    # 2. The reform read on this flow: the reason the rest exists.
-    ("REFORME", [("conformite", 6, 60), ("vague_2027", 6, 60)]),
+    # 2. The reform read on this flow: how many today, how many still to come, and who
+    #    has to be brought along first.
+    ("REFORME", [("kpi_obligation_2026", 3, 45), ("kpi_obligation_2027", 3, 45),
+                 ("vague_2027", 6, 45)]),
     # 3. What the controls found, ending on the companies they name.
     ("CONTROLE", [("anomalies_montant", 6, 60), ("emetteurs_cesses", 6, 60)]),
     ("IA", [("ai_insights", 12, 60)]),
     # The evidence, for whoever wants to go down to it.
     ("DETAIL", [("carte_montant", 6, 70), ("secteurs", 6, 70)]),
     ("DETAIL2", [("anomalies_type", 6, 60), ("anomalies_mensuel", 6, 60)]),
+    ("DETAIL3", [("conformite", 12, 55)]),
     ("ACTEURS", [("top_acteurs", 12, 65)]),
     ("APPOINT", [("kpi_tva", 4, 30), ("kpi_ttc", 4, 30), ("kpi_entreprises", 4, 30)]),
 ]
