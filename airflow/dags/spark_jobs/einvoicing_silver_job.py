@@ -50,9 +50,14 @@ TOLERANCE = Decimal("0.01")
 
 ACTIF = "A"
 
-# A line billed at more than this multiple of its sector's usual invoice is worth
-# a look. It is a report, never a rejection: a large legitimate invoice exists.
-FACTEUR_ABERRANT = 50
+# An invoice billed at more than this multiple of its sector's median is worth a
+# look. Set from the flow itself: the largest legitimate invoice sits at 5.4 times
+# its sector median and the 99th percentile at 4.1, so eight leaves a clear margin.
+#
+# This is the one control that is not exact. It reports, it never rejects, and a
+# genuinely large invoice can sit above the threshold while a moderately inflated
+# one slips under it. The other nine answer yes or no; this one answers "unusual".
+FACTEUR_ABERRANT = 8
 
 LIGNE = StructType(
     [
