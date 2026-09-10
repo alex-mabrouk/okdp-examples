@@ -35,7 +35,7 @@ def collect_facts(spark, gold):
     qualite = f"{gold}.qualite_anomalies"
     reforme = f"{gold}.conformite_reforme"
     reforme_naf = f"{gold}.conformite_par_section_naf"
-    emetteurs = f"{gold}.emetteurs_en_anomalie"
+    emetteurs_anomalie = f"{gold}.emetteurs_en_anomalie"
 
     one, rows = queries(spark)
 
@@ -204,7 +204,7 @@ def collect_facts(spark, gold):
 
     cesses = one(
         f"""SELECT count(*) AS nb_entreprises, coalesce(sum(montant_ttc), 0) AS montant
-            FROM {emetteurs} WHERE regle_id = 'REF-EMETTEUR-CESSE'"""
+            FROM {emetteurs_anomalie} WHERE regle_id = 'REF-EMETTEUR-CESSE'"""
     )
     if cesses["nb_entreprises"]:
         facts.append(fact("referentiel_entreprises_cessees", "référentiel", "flux reçu",
