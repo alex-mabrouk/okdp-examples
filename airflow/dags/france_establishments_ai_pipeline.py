@@ -25,7 +25,11 @@ from france_establishments_assets import (
     OLLAMA_URL,
 )
 
-SCRIPT_PATH = Path(__file__).parent / "spark_jobs" / "france_establishments_ai_job.py"
+JOBS = Path(__file__).parent / "spark_jobs"
+SCRIPT_PATH = JOBS / "france_establishments_ai_job.py"
+# The prompt, the checks and the two tables are shared with the e-invoicing
+# chain: a sentence is accepted here on exactly the rules that accept one there.
+MODULES = (JOBS / "ai_insights.py",)
 
 default_args = {
     "owner": "data-team",
@@ -41,6 +45,7 @@ def write_insights(run_id):
         name=f"{BRONZE_PREFIX}-ai",
         run_id=run_id,
         script_path=SCRIPT_PATH,
+        modules=MODULES,
         arguments=[
             "--catalog", GOLD_CATALOG,
             "--namespace", GOLD_NAMESPACE,
