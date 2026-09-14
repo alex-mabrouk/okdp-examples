@@ -45,10 +45,14 @@ RUN curl -fsSL -o /usr/local/bin/trino \
 
 RUN pip install --no-cache-dir \
       requests \
-      pyyaml
+      pyyaml \
+      confluent-kafka
 
 COPY docker/polaris-admin.py /usr/local/bin/polaris-admin
 RUN chmod +x /usr/local/bin/polaris-admin
+
+COPY docker/douane_producer.py /usr/local/bin/douane-producer
+RUN chmod +x /usr/local/bin/douane-producer
 
 RUN python --version && \
     git --version && \
