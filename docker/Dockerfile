@@ -14,10 +14,13 @@
 #  limitations under the License.
 #
 
+# dl.min.io prunes old archived releases (the pinned curl download 404s/410s
+# over time); the same binaries stay available, tagged, as a container image.
+FROM quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z AS mc
+
 FROM python:3.12-slim-bookworm
 
-ENV MC_VERSION=RELEASE.2024-11-21T17-21-54Z \
-    TRINO_VERSION=480 \
+ENV TRINO_VERSION=480 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/usr/local/bin:${PATH}"
@@ -34,9 +37,7 @@ RUN apt-get update && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL -o /usr/local/bin/mc \
-      "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.${MC_VERSION}" && \
-    chmod +x /usr/local/bin/mc
+COPY --from=mc /usr/bin/mc /usr/local/bin/mc
 
 RUN curl -fsSL -o /usr/local/bin/trino \
       "https://github.com/trinodb/trino/releases/download/${TRINO_VERSION}/trino-cli-${TRINO_VERSION}" && \
