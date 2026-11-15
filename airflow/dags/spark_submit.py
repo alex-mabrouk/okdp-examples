@@ -28,28 +28,23 @@ SPARK_VERSION = "3.5.6"
 SPARK_SERVICE_ACCOUNT = os.getenv("SPARK_SERVICE_ACCOUNT", "spark")
 SCRIPT_MOUNT_DIR = "/opt/spark/app"
 
-S3_CREDENTIALS_SECRET = os.getenv("S3_CREDENTIALS_SECRET", "creds-examples-s3")
-S3_ACCESS_KEY_FIELD = "S3_ACCESS_KEY"
-S3_SECRET_KEY_FIELD = "S3_SECRET_KEY"
+# Storage identity of the Airflow instance (s3-v1 Secret), for the s3a paths of a
+# job. Empty: the job reads and writes only through the Iceberg catalogs.
+S3_CREDENTIALS_SECRET = os.getenv("S3_CREDENTIALS_SECRET", "")
+S3_ACCESS_KEY_FIELD = "accessKey"
+S3_SECRET_KEY_FIELD = "secretKey"
 
-# Where the Spark History Server of the platform looks for completed runs.
-SPARK_EVENT_LOG_DIR = os.getenv("SPARK_EVENT_LOG_DIR", "s3a://spark-events/event-logs")
+# Where the Spark History Server of the platform looks for completed runs. Empty:
+# no event logs.
+SPARK_EVENT_LOG_DIR = os.getenv("SPARK_EVENT_LOG_DIR", "")
 
-# The OAuth2 service account jobs authenticate to Polaris with. Its principal
-# must hold a role granting writes on the target catalog.
-POLARIS_CREDENTIALS_SECRET = os.getenv(
-    "POLARIS_CREDENTIALS_SECRET", "creds-polaris-oauth2-etl-okdp-sandbox"
-)
-POLARIS_CLIENT_ID_FIELD = "client_id"
-POLARIS_CLIENT_SECRET_FIELD = "client_secret"
-POLARIS_URI = os.getenv("POLARIS_CATALOG_URI", "https://polaris-demo.okdp.sandbox/api/catalog")
-POLARIS_OAUTH2_SERVER_URI = os.getenv(
-    "POLARIS_OAUTH2_SERVER_URI",
-    "https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token",
-)
-POLARIS_REALM = os.getenv("POLARIS_REALM", "sandbox")
-# Iceberg defaults to scope=catalog, which Keycloak rejects as an unknown scope.
-POLARIS_SCOPE = os.getenv("POLARIS_SCOPE", "profile")
+# The workload identity of the project, an OIDC client the catalog authorizes.
+WORKLOAD_CLIENT_SECRET = os.getenv("WORKLOAD_CLIENT_SECRET", "")
+WORKLOAD_CLIENT_ID_FIELD = "client_id"
+WORKLOAD_CLIENT_SECRET_FIELD = "client_secret"
+OIDC_TOKEN_URL = os.getenv("OIDC_TOKEN_URL", "")
+# Iceberg asks scope=catalog by default, unknown to an OIDC provider; openid is always valid.
+POLARIS_SCOPE = "openid"
 
 # The driver reaches Polaris and Keycloak over TLS signed by the platform CA,
 # which the JVM only trusts through this truststore.
@@ -90,9 +85,15 @@ def s3_endpoint():
     return endpoint
 
 
-def base_spark_conf():
+def base_spark_conf(s3=True):
+    """s3=False: the job reads and writes only through the Iceberg catalogs."""
+    if not (s3 and S3_CREDENTIALS_SECRET):
+        return {}
+    conf = {}
+    if SPARK_EVENT_LOG_DIR:
+        conf.update({"spark.eventLog.enabled": "true", "spark.eventLog.dir": SPARK_EVENT_LOG_DIR})
     endpoint = s3_endpoint()
-    return {
+    conf.update({
         "spark.hadoop.fs.s3a.endpoint": endpoint,
         "spark.hadoop.fs.s3a.path.style.access": "true",
         "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
@@ -101,17 +102,27 @@ def base_spark_conf():
         ).lower(),
         "spark.hadoop.fs.s3a.fast.upload": "true",
         "spark.hadoop.fs.s3a.fast.upload.buffer": "bytebuffer",
-        "spark.eventLog.enabled": "true",
-        "spark.eventLog.dir": SPARK_EVENT_LOG_DIR,
-    }
+    })
+    return conf
+
+
+def _catalog_env(catalog, key):
+    name = f"ICEBERG_CATALOG_{catalog.upper()}_{key}"
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is not set: the catalog {catalog} was not declared to Airflow")
+    return value
 
 
 def iceberg_catalog_conf(*catalogs):
     """Declare one or more Polaris REST catalogs. The credential is not here.
 
     Each job assembles it from the mounted Secret so the client secret never
-    lands in the SparkApplication manifest.
+    lands in the SparkApplication manifest. The files are read and written with
+    the credentials the catalog vends for each table.
     """
+    if not OIDC_TOKEN_URL:
+        raise RuntimeError("OIDC_TOKEN_URL is not set")
     conf = {
         "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
     }
@@ -121,19 +132,17 @@ def iceberg_catalog_conf(*catalogs):
             {
                 prefix: "org.apache.iceberg.spark.SparkCatalog",
                 f"{prefix}.type": "rest",
-                f"{prefix}.warehouse": catalog,
-                f"{prefix}.uri": POLARIS_URI,
+                f"{prefix}.warehouse": _catalog_env(catalog, "WAREHOUSE"),
+                f"{prefix}.uri": _catalog_env(catalog, "URI"),
                 f"{prefix}.rest.auth.type": "oauth2",
-                f"{prefix}.oauth2-server-uri": POLARIS_OAUTH2_SERVER_URI,
+                f"{prefix}.oauth2-server-uri": OIDC_TOKEN_URL,
                 f"{prefix}.scope": POLARIS_SCOPE,
                 # The client holds the secret, so it re-authenticates on its own
                 # rather than carrying a token that expires mid-run.
                 f"{prefix}.token-refresh-enabled": "true",
-                f"{prefix}.header.Polaris-Realm": POLARIS_REALM,
+                f"{prefix}.header.Polaris-Realm": _catalog_env(catalog, "REALM"),
                 f"{prefix}.header.X-Iceberg-Access-Delegation": "vended-credentials",
                 f"{prefix}.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
-                f"{prefix}.client.region": "us-east-1",
-                f"{prefix}.s3.region": "us-east-1",
             }
         )
     return conf
@@ -194,25 +203,28 @@ def _delete_if_exists(custom_api, app_name):
             raise
 
 
-def _pod_spec(workload, configmap_name, polaris, extra):
+def _pod_spec(workload, configmap_name, polaris, s3, extra):
     mounts = [{"name": "job-script", "mountPath": SCRIPT_MOUNT_DIR}]
     volumes = [{"name": "job-script", "configMap": {"name": configmap_name}}]
-    secrets = {
-        "AWS_ACCESS_KEY_ID": {"name": S3_CREDENTIALS_SECRET, "key": S3_ACCESS_KEY_FIELD},
-        "AWS_SECRET_ACCESS_KEY": {"name": S3_CREDENTIALS_SECRET, "key": S3_SECRET_KEY_FIELD},
-    }
-    env = [{"name": "S3_ENDPOINT", "value": s3_endpoint()}]
+    secrets = {}
+    env = []
+    if s3 and S3_CREDENTIALS_SECRET:
+        secrets["AWS_ACCESS_KEY_ID"] = {"name": S3_CREDENTIALS_SECRET, "key": S3_ACCESS_KEY_FIELD}
+        secrets["AWS_SECRET_ACCESS_KEY"] = {"name": S3_CREDENTIALS_SECRET, "key": S3_SECRET_KEY_FIELD}
+        env.append({"name": "S3_ENDPOINT", "value": s3_endpoint()})
 
     if polaris:
+        if not WORKLOAD_CLIENT_SECRET:
+            raise RuntimeError("WORKLOAD_CLIENT_SECRET is not set: no workload client for the catalogs")
         mounts.append({"name": "cacerts", "mountPath": TRUSTSTORE_MOUNT_DIR})
         volumes.append({"name": "cacerts", "secret": {"secretName": TRUSTSTORE_SECRET}})
         secrets["POLARIS_CLIENT_ID"] = {
-            "name": POLARIS_CREDENTIALS_SECRET,
-            "key": POLARIS_CLIENT_ID_FIELD,
+            "name": WORKLOAD_CLIENT_SECRET,
+            "key": WORKLOAD_CLIENT_ID_FIELD,
         }
         secrets["POLARIS_CLIENT_SECRET"] = {
-            "name": POLARIS_CREDENTIALS_SECRET,
-            "key": POLARIS_CLIENT_SECRET_FIELD,
+            "name": WORKLOAD_CLIENT_SECRET,
+            "key": WORKLOAD_CLIENT_SECRET_FIELD,
         }
         env.append(
             {
@@ -242,6 +254,7 @@ def submit_and_wait(
     arguments,
     spark_conf=None,
     polaris=False,
+    s3=True,
     image=None,
     modules=(),
     driver_cores=1,
@@ -266,13 +279,14 @@ def submit_and_wait(
     configmap_name = _ensure_etl_code_configmap(core_api, script_path, modules)
     app_name = safe_name(name, slug(run_id))
 
-    conf = base_spark_conf()
+    conf = base_spark_conf(s3)
     conf.update(spark_conf or {})
 
     driver, volumes = _pod_spec(
         name,
         configmap_name,
         polaris,
+        s3,
         {
             "cores": driver_cores,
             "memory": driver_memory,
@@ -283,6 +297,7 @@ def submit_and_wait(
         name,
         configmap_name,
         polaris,
+        s3,
         {"instances": executors, "cores": executor_cores, "memory": executor_memory},
     )
 

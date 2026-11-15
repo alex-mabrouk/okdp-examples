@@ -137,20 +137,18 @@ As a result, platform applications consume Keycloak roles as user groups.
 | `business_analyst`      | BI and read-only access                              |
 | `data_steward`          | Governance, stewardship, and metadata administration |
 | `auditor`               | Audit and read-only access                           |
-| `polaris_service_admin` | Polaris service administration                       |
-| `polaris_catalog_admin` | Polaris catalog administration                       |
 
 ## OIDC Users
 
-| User    | Groups                                                             |
-| ------- | ------------------------------------------------------------------ |
-| `bob`   | `data_engineer`                                                    |
-| `mark`  | `data_scientist`                                                   |
-| `nina`  | `business_analyst`                                                 |
-| `grace` | `data_steward`                                                     |
-| `eve`   | `auditor`                                                          |
-| `alice` | `platform_admin`, `polaris_service_admin`, `polaris_catalog_admin` |
-| `adm`   | `platform_admin`, `polaris_service_admin`, `polaris_catalog_admin` |
+| User    | Groups             |
+| ------- | ------------------ |
+| `bob`   | `data_engineer`    |
+| `mark`  | `data_scientist`   |
+| `nina`  | `business_analyst` |
+| `grace` | `data_steward`     |
+| `eve`   | `auditor`          |
+| `alice` | `platform_admin`   |
+| `adm`   | `platform_admin`   |
 
 
 <details>
@@ -233,13 +231,12 @@ Polaris is used as the main authorization layer for Iceberg catalogs such as `si
 
 Service accounts are used for platform-to-platform communication.
 
-| Service Account                | Purpose                                      |
-| ------------------------------ | -------------------------------------------- |
-| `svc-trino-polaris-writer`     | Trino access to Polaris/Iceberg catalogs     |
-| `svc-spark-etl-polaris-writer` | Spark ETL access to Polaris/Iceberg catalogs |
-| `svc-polaris-api-admin`        | Polaris API administration                   |
+| Service Account             | Purpose                         |
+| --------------------------- | ------------------------------- |
+| `svc-trino-examples-writer` | AI assistant queries to Trino   |
 
-Service accounts receive dedicated Keycloak roles and matching Polaris principal roles.
+The services that reach Polaris (Trino, JupyterHub, Spark jobs) use OIDC clients registered
+for them; Polaris authorizes them by client id through OPA.
 
 </details>
 
