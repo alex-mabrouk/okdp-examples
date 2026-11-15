@@ -1,13 +1,7 @@
 # Airflow Examples
 
-Apache Airflow DAGs and helpers showcasing how to orchestrate Spark jobs and
-data workflows on the OKDP platform.
-
-These DAGs are automatically pulled into the Airflow scheduler by the
-`gitSync` sidecar configured in the
-[okdp-sandbox Airflow package](https://github.com/OKDP/okdp-sandbox/blob/main/packages/okdp-packages/airflow/airflow.yaml)
-(see `dagGitRepo` / `dagGitSubPath`). Any change pushed to `main` is reflected
-in the scheduler within ~60 seconds.
+Apache Airflow DAGs and helpers showing how to orchestrate Spark jobs and data
+workflows on the OKDP platform.
 
 ## Available DAGs
 
@@ -17,67 +11,48 @@ in the scheduler within ~60 seconds.
 | `hello_daily` | Same as above, scheduled daily |
 | `spark_pi_example` | Submits the canonical Spark Pi job via `SparkApplication` |
 | `orders_etl_daily` | Daily Spark ETL with dynamic ConfigMap-based script injection |
-| `nyc_taxi_pipeline` | Reads NYC taxi data from S3, transforms with Spark, writes back |
+| `nyc_taxi_pipeline` | Reads NYC taxi data from S3, transforms with Spark, writes back — [docs](docs/nyc-taxi.md) |
+| `iceberg_polaris_pipeline` | Publishes an **Iceberg table** through the Polaris REST catalog — [docs](docs/iceberg-polaris.md) |
+| `france_establishments_bronze` | Lands four French open-data sources, partitioned by department — [docs](docs/france-establishments.md) |
+| `france_establishments_silver` | Joins them into a conformed Iceberg table — [docs](docs/france-establishments.md) |
+| `france_establishments_gold` | Aggregates the five tables the dashboard reads — [docs](docs/france-establishments.md) |
 
-## Running the NYC Taxi pipeline
+## How a DAG reaches the scheduler
 
-The DAG publishes its own Spark job as a ConfigMap in the namespace it runs
-in. The raw parquet must be available in the bronze bucket.
-
-The ETL DAGs default to the sandbox object store,
-`http://storage-s3.default.svc.cluster.local:8333`. When your store lives
-elsewhere, set `AIRFLOW_ETL_S3_ENDPOINT` on the Airflow workers.
+A `gitSync` sidecar clones the repository into the Airflow pods and refreshes it
+every 60 seconds. The OKDP sandbox points it at **`main` of the upstream
+repository**, so a DAG on a branch or on a local disk is invisible to Airflow
+until it is merged:
 
 ```bash
-# 1. Open the Airflow UI and trigger the DAG `nyc_taxi_pipeline`
-open https://airflow.okdp.sandbox
-
-# 2. Verify the results in SeaweedFS S3
-kubectl run --rm -it s3-check --image=amazon/aws-cli:latest --restart=Never \
-  --command -- aws --endpoint-url http://storage-s3.default.svc.cluster.local:8333 \
-  --no-verify-ssl s3 ls s3://gold/mobility/nyc_tlc/yellow/ --recursive
+kubectl -n demo get deploy demo-airflow-main-dag-processor -o json \
+  | jq -r '.spec.template.spec.containers[]|select(.name=="git-sync").env[]
+           |select(.name|startswith("GITSYNC"))|"\(.name)=\(.value)"'
 ```
 
-## Architecture (NYC Taxi pipeline)
+The repository and branch come from the `dagsGitSync` parameter of the Airflow
+package. New DAGs arrive paused.
 
-```
-Airflow DAG (PythonOperator)
-    → SparkApplication (Spark Operator)
-        → Spark Driver + Executors
-            → Read:  s3a://bronze/mobility/nyc_tlc/yellow/  (11M+ rows)
-            → Clean + Aggregate (168 rows: 24h × 7 days)
-            → Write: s3a://gold/mobility/nyc_tlc/yellow/<run id>/nyc_taxi_aggregated.csv
-```
+## Writing a Spark DAG
 
-## Datasets
+Every Spark DAG here follows the same shape: the DAG publishes its job source as
+a ConfigMap, submits a `SparkApplication`, and waits for it. That plumbing lives
+once in `dags/spark_submit.py`, which knows about the platform — object store,
+Polaris catalog, the CA the JVM must trust — and nothing about the data. What a
+given source needs in order to be read belongs to the job that reads it.
 
-NYC Yellow Taxi data is already provisioned in SeaweedFS by the
-`okdp-examples` Helm chart at deployment time:
+The shape also means any job can be run without Airflow, by submitting its
+`SparkApplication` directly — which is how these were tested before merge.
 
-```
-s3://bronze/mobility/nyc_tlc/yellow/
-├── month=2025-01/yellow_tripdata_2025-01.parquet  (59 MB)
-├── month=2025-02/yellow_tripdata_2025-02.parquet  (60 MB)
-└── month=2025-03/yellow_tripdata_2025-03.parquet  (70 MB)
-```
-
-No manual download required.
-
-## Pipeline steps (NYC Taxi)
-
-1. **Read** — 3 months of Parquet data from S3 (11M+ rows)
-2. **Clean** — Filter invalid trips (fare ≤ 0, distance ≤ 0, etc.)
-3. **Aggregate** — Group by hour and day-of-week (168 rows)
-4. **Write** — Upload aggregated CSV to SeaweedFS via the JVM AWS SDK
-
-> **Note**: writes use the JVM S3 SDK (not the Hadoop FileOutputCommitter)
-> to work around a SeaweedFS `copyObject` quirk.
+> **Importing a module next to a DAG** needs
+> `sys.path.append(str(Path(__file__).parent))` first. Airflow 3 loads DAG files
+> through `module_from_spec`, `PYTHONPATH` is empty and `settings.py` never adds
+> `DAGS_FOLDER` — unlike Airflow 2. Without the line, the DAG fails at parse time.
 
 ## Useful commands
 
-On the sandbox the demo project runs in the `demo` namespace, and its
-Airflow instance is named `demo-airflow`. Replace both with your own
-project and instance names.
+On the sandbox the demo project runs in the `demo` namespace, and its Airflow
+instance is named `demo-airflow`. Replace both with your own names.
 
 ```bash
 # SparkApplication status
@@ -96,15 +71,25 @@ kubectl exec -n demo deploy/demo-airflow-main-scheduler -c scheduler -- \
 ```
 airflow/
 ├── README.md
+├── docs/
+│   ├── nyc-taxi.md
+│   ├── iceberg-polaris.md
+│   └── france-establishments.md
 ├── dags/
 │   ├── hello_world.py
 │   ├── hello_daily.py
 │   ├── spark_pi_example.py
 │   ├── orders_etl_daily.py
 │   ├── nyc_taxi_pipeline.py
+│   ├── iceberg_polaris_pipeline.py
+│   ├── spark_submit.py                      submit a SparkApplication, once
+│   ├── france_establishments_assets.py      identifiers and assets of the chain
+│   ├── france_establishments_{bronze,silver,gold}_pipeline.py
 │   └── spark_jobs/
 │       ├── nyc_taxi_etl_job.py
-│       └── orders_etl_job.py
+│       ├── orders_etl_job.py
+│       ├── iceberg_polaris_etl_job.py
+│       └── france_establishments_{bronze,silver,gold}_job.py
 └── tests/
     ├── test_dags.py
     └── run_integration_tests.sh

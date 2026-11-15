@@ -247,72 +247,10 @@ commands: {}
 #        FROM lakehouse.nyc_tripdata.yellow
 #        LIMIT 10;
 #      SQL
-#  03-polaris: |
-#    01-polaris-apply-catalogs
-#      polaris-admin --catalog-file /etc/polaris/catalogs.yaml
 
 # -- extraFiles is a map of additional single-file ConfigMaps mounted into the Job container.
 # -- Each entry must define mountPath and stringData, and may optionally define fileName.
 extraFiles: {}
-#  polaris-catalogs:
-#    mountPath: /etc/polaris/catalogs.yaml
-#    stringData: |
-#      realms:
-#        - name: SANDBOX
-#          catalogs:
-#            - name: mobility
-#              type: INTERNAL
-#              properties:
-#                default-base-location: $DEFAULT_POLARIS_CATALOG_BASE_LOCATION
-#              storageConfigInfo:
-#                storageType: S3
-#                "allowedLocations": ["$DEFAULT_POLARIS_CATALOG_BASE_LOCATION"],
-#                "endpoint": "$S3_ENDPOINT",
-#                "endpointInternal": "$S3_ENDPOINT",
-#                "stsEndpoint": "$S3_ENDPOINT",
-#                "pathStyleAccess": true,
-#                "stsUnavailable": false,
-#                "region": "dummy",
-#                "roleArn": "$ROLE_ARN"
-#          catalogRoles:
-#            - name: catalog_contributor
-#              grants:
-#                - onCatalog: mobility
-#                  privileges:
-#                    - CATALOG_READ_PROPERTIES
-#
-#            - name: catalog_reader
-#              grants:
-#                - onCatalog: mobility
-#                  privileges:
-#                    - CATALOG_READ_PROPERTIES
-#
-#            - name: data_administrator
-#              grants:
-#                - onCatalog: mobility
-#                  privileges:
-#                    - CATALOG_READ_PROPERTIES
-#                    - CATALOG_ATTACH_POLICY
-#                    - CATALOG_DETACH_POLICY
-#
-#          principalRoles:
-#            - name: data_scientist
-#              catalogRoles:
-#                - catalog_reader
-#
-#            - name: data_engineer
-#              catalogRoles:
-#                - catalog_contributor
-#                - data_administrator
-#
-#          principals:
-#            - name: alice
-#              principalRoles:
-#                - data_scientist
-#
-#            - name: bob
-#              principalRoles:
-#                - data_engineer
 
 # -- ServiceAccount configuration for the Job pod.
 serviceAccount:
