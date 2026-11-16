@@ -68,5 +68,5 @@ and costs the VRAM the act 1 DAG needs.
 
 `guard()` (SELECT only, single statement, and only the schema of the selected domain) is a
 demo guard, not an authorization layer. Trino decides what `svc-trino-examples-writer` may
-read, from the DataAccessPolicies that name it (`../../okdp_authz_policy/`). Trino sees it as
+read, from the DataAccessPolicies that name it (`../../authz/`). Trino sees it as
 `service-account-svc-trino-examples-writer`, the user of its token.

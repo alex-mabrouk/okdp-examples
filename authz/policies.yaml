@@ -1,0 +1,115 @@
+#
+# Copyright 2025 The OKDP Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+# DataAccessPolicies of the examples for a project "demo" with a Polaris instance "demo-polaris"
+# (warehouses bronze, silver, gold). Replace ETL_CLIENT_ID and HUB_CLIENT_ID, see README.md.
+
+# The workload client of the project: the Airflow DAGs and their Spark jobs.
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: etl-bronze
+  namespace: demo
+spec:
+  subjects:
+    clients: [ETL_CLIENT_ID]
+  resource: { catalog: demo-polaris, warehouse: bronze, namespace: "*", table: "*" }
+  privileges: [select, insert, create]
+---
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: etl-silver
+  namespace: demo
+spec:
+  subjects:
+    clients: [ETL_CLIENT_ID]
+  resource: { catalog: demo-polaris, warehouse: silver, namespace: "*", table: "*" }
+  privileges: [select, insert, update, delete, create, drop]
+---
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: etl-gold
+  namespace: demo
+spec:
+  subjects:
+    clients: [ETL_CLIENT_ID]
+  resource: { catalog: demo-polaris, warehouse: gold, namespace: "*", table: "*" }
+  privileges: [select, insert, update, delete, create, drop]
+---
+# The catalog client of JupyterHub: notebooks read silver and gold, not bronze.
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: hub-silver
+  namespace: demo
+spec:
+  subjects:
+    clients: [HUB_CLIENT_ID]
+  resource: { catalog: demo-polaris, warehouse: silver, namespace: "*", table: "*" }
+  privileges: [select]
+---
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: hub-gold
+  namespace: demo
+spec:
+  subjects:
+    clients: [HUB_CLIENT_ID]
+  resource: { catalog: demo-polaris, warehouse: gold, namespace: "*", table: "*" }
+  privileges: [select]
+---
+# Data engineers read bronze and build silver.
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: engineers-bronze
+  namespace: demo
+spec:
+  subjects:
+    groups: [data_engineer]
+  resource: { catalog: demo-polaris, warehouse: bronze, namespace: "*", table: "*" }
+  privileges: [select]
+---
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: engineers-silver
+  namespace: demo
+spec:
+  subjects:
+    groups: [data_engineer]
+  resource: { catalog: demo-polaris, warehouse: silver, namespace: "*", table: "*" }
+  privileges: [select, insert, update, delete, create]
+---
+# Business analysts read gold through Trino (Superset): French rows only, contact data masked.
+apiVersion: data.okdp.io/v1alpha1
+kind: DataAccessPolicy
+metadata:
+  name: analysts-gold
+  namespace: demo
+spec:
+  subjects:
+    groups: [business_analyst]
+  resource: { catalog: demo-polaris, warehouse: gold, namespace: "*", table: "*" }
+  privileges: [select]
+  rowFilter:
+    - { column: country, op: eq, value: FR }
+  columns:
+    - { name: email, action: mask-alphanum }
+    - { name: phone, action: show-last-4 }

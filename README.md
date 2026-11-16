@@ -42,12 +42,10 @@ The diagram below illustrates how the OKDP services interact:
 #### Security and access model:
 
 - Keycloak provides OIDC / OAuth2 identity.
-- Jupyter accesses Polaris through OAuth2.
-- Polaris manages catalog permissions and returns temporary credentials for object storage access.
-- The storage service provides S3-compatible object storage with IAM and STS.
-- Bronze can use static S3 credentials for raw data access.
-- Silver and Gold should use temporary credentials through Polaris / STS where possible.
-- Superset accesses datasets through Trino rather than directly accessing object storage.
+- Access to the Iceberg tables is written as `DataAccessPolicy` resources; OPA decides for Trino and Polaris (see [`authz/`](authz/)).
+- Polaris returns temporary credentials for the files of each allowed table: no object store key for Silver and Gold.
+- Bronze raw files are read with the storage credentials of the project.
+- Superset accesses datasets through Trino, with the identity of the user.
 
 # Notebooks
 
@@ -87,24 +85,18 @@ See [`airflow/README.md`](./airflow/README.md) for the full list of DAGs and qui
 
 Using [okdp-ui](https://github.com/OKDP/okdp-sandbox), deploy the following components:
 
-- Storage: S3-compatible object storage ([SeaweedFS](https://github.com/seaweedfs/seaweedfs) in the sandbox)
+- Storage: S3-compatible object storage ([RustFS](https://github.com/rustfs/rustfs) in the sandbox)
 - Data Catalog: [Hive Metastore](https://hive.apache.org/), [Apache Polaris](https://polaris.apache.org/)
 - Interactive Query: [Trino](https://trino.io/)
 - Notebooks: [Jupyter](https://jupyter.org/)
 - DataViz: [Apache Superset](https://superset.apache.org/)
 - Workflow orchestration: [Apache Airflow](https://airflow.apache.org/)
-- Applications: [okdp-examples](https://okdp.io)
 
 # About the datasets
 
-At deployment time, the Helm chart:
-1. Downloads public datasets.
-2. Uploads them into object storage.
-3. Creates the corresponding Trino external tables.
-
-> ℹ️ NOTE
->
-> The datasets are not bundled in this repository and are not baked into container images.
+The datasets are not bundled in this repository and are not baked into container images. The bronze
+DAGs download their sources (for example `france_establishments_bronze_pipeline`). The NYC TLC files the
+`nyc_trip` notebooks read (`s3://bronze/mobility/nyc_tlc/`) are not loaded by any DAG yet.
 
 # Authentication and Authorization Model
 
@@ -199,30 +191,11 @@ Superset is configured to impersonate users when connecting to Trino, allowing d
 </details>
 
 <details>
-<summary><strong>Polaris authorization</strong></summary>
+<summary><strong>Data access</strong></summary>
 
-Polaris is used as the main authorization layer for Iceberg catalogs such as `silver` and `gold`.
-
-### Catalog roles
-
-| Polaris Catalog Role  | Purpose                                                       |
-| --------------------- | ------------------------------------------------------------- |
-| `catalog_reader`      | Read catalog metadata and table data                          |
-| `catalog_contributor` | Create and write namespaces, tables, and views                |
-| `data_administrator`  | Manage catalog, namespace, table, view metadata, and policies |
-
-### Principal role mapping
-
-| Principal Role     | Polaris Catalog Roles                       | Access Level                     |
-| ------------------ | ------------------------------------------- | -------------------------------- |
-| `business_analyst` | `catalog_reader`                            | Read-only                        |
-| `data_scientist`   | `catalog_reader`                            | Read-only                        |
-| `auditor`          | `catalog_reader`                            | Read-only                        |
-| `data_steward`     | `catalog_reader`, `data_administrator`      | Read + governance administration |
-| `data_engineer`    | `catalog_contributor`, `data_administrator` | Read/write + administration      |
-| `platform_admin`   | `catalog_contributor`, `data_administrator` | Full data/catalog administration |
-| `service_admin`    | Service administration                      | Polaris admin-plane access       |
-| `catalog_admin`    | Catalog administration                      | Polaris admin-plane access       |
+Access to the Iceberg catalogs (`bronze`, `silver`, `gold`) is written as `DataAccessPolicy` resources in
+the project namespace: groups for users, client ids for workloads. OPA decides for Trino and Polaris.
+The policies of the examples and how to write one are in [`authz/`](authz/).
 
 </details>
 
@@ -243,20 +216,9 @@ for them; Polaris authorizes them by client id through OPA.
 <details>
 <summary><strong>Storage authorization</strong></summary>
 
-Object storage access is managed through service identities rather than individual end-user identities.
-
-| Identity        | Access                   |
-| --------------- | ------------------------ |
-| `hiveMetastore` | Read, write, list        |
-| `trino`         | Read, write, list, admin |
-| `jupyterHub`    | Read, write, list        |
-| `sparkHistory`  | Read, write, list        |
-| `polaris`       | Read, write, list, admin |
-| `airflow`       | Read, write, list, admin |
-| `examples`      | Admin, read, write, list |
-| `seaweedfs`     | Admin                    |
-
-Storage access is controlled at the service level, while user-level data access is enforced mainly through Trino, Polaris, and application-level role mappings.
+Iceberg tables are read and written with the temporary credentials Polaris vends for each allowed table.
+Bronze raw files and the Hive external tables use the storage credentials of the project, held by the
+services that need them (Hive Metastore, Trino, Spark jobs reading `s3a://`).
 
 </details>
 
