@@ -47,3 +47,35 @@ test_not_configured if {
 	g := idp.groups("nina") with idp.env as {} with http.send as keycloak
 	g == set()
 }
+
+keycloak(request) := {"status_code": 200, "body": [{"id": "c-etl", "clientId": "etl"}]} if {
+	request.url == "https://keycloak.example/admin/realms/master/clients?clientId=etl"
+}
+
+keycloak(request) := {"status_code": 200, "body": []} if {
+	request.url == "https://keycloak.example/admin/realms/master/clients?clientId=nobody"
+}
+
+keycloak(request) := {"status_code": 200, "body": {"id": "u-etl", "username": "service-account-etl"}} if {
+	request.url == "https://keycloak.example/admin/realms/master/clients/c-etl/service-account-user"
+}
+
+test_client_of_service_account if {
+	c := idp.clients("service-account-etl") with idp.env as env with http.send as keycloak
+	c == {"etl"}
+}
+
+test_unknown_client if {
+	c := idp.clients("service-account-nobody") with idp.env as env with http.send as keycloak
+	c == set()
+}
+
+test_user_is_no_client if {
+	c := idp.clients("nina") with idp.env as env with http.send as keycloak
+	c == set()
+}
+
+test_clients_identity_provider_down if {
+	c := idp.clients("service-account-etl") with idp.env as env with http.send as down
+	c == set()
+}

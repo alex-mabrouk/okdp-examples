@@ -315,12 +315,14 @@ class Pipe:
     class Valves(BaseModel):
         OLLAMA_URL: str = Field(default="http://demo-ollama-main.demo.svc.cluster.local:11434")
         MODEL: str = Field(default="mistral:7b")
-        TRINO_URL: str = Field(default="http://demo-trino-main-trino.demo.svc.cluster.local:8080")
+        TRINO_URL: str = Field(default="https://trino-demo.okdp.sandbox")
         TOKEN_URL: str = Field(
             default="https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token"
         )
         CLIENT_ID: str = Field(default="svc-trino-examples-writer")
         CLIENT_SECRET: str = Field(default="")
+        # trino: the scope that gives the token the audience Trino requires.
+        SCOPE: str = Field(default="openid trino")
         MAX_ROWS: int = Field(default=50)
         SHOW_SQL: bool = Field(default=True, description="Show the query before its result")
 
@@ -349,6 +351,7 @@ class Pipe:
                 "grant_type": "client_credentials",
                 "client_id": self.valves.CLIENT_ID,
                 "client_secret": self.valves.CLIENT_SECRET,
+                "scope": self.valves.SCOPE,
             },
             timeout=30,
         )
@@ -358,14 +361,9 @@ class Pipe:
         return self._token[0]
 
     def _sql(self, sql, max_rows=None):
-        # Trino denies impersonation: X-Trino-User must be the JWT principal, the client_id.
+        # No X-Trino-User: Trino takes the user from the token.
         session = requests.Session()
-        session.headers.update(
-            {
-                "Authorization": f"Bearer {self._bearer()}",
-                "X-Trino-User": self.valves.CLIENT_ID,
-            }
-        )
+        session.headers.update({"Authorization": f"Bearer {self._bearer()}"})
         r = session.post(f"{self.valves.TRINO_URL}/v1/statement", data=sql.encode(), timeout=60)
         r.raise_for_status()
         payload, rows, columns = r.json(), [], None

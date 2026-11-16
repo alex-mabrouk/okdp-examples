@@ -46,8 +46,17 @@ dashboard filter drives every chart. Both are explained in
 | `FRANCE_ESTABLISHMENTS_{SILVER,GOLD}_CATALOG` / `_NAMESPACE` | `silver`/`gold` / `france_establishments` | Iceberg targets |
 
 ```bash
-kubectl exec -n demo deploy/demo-trino-main-trino-coordinator -- \
-  trino --execute "SELECT code_departement, nb_etablissements, part_qpv \
-                   FROM gold.france_establishments.etablissements_par_departement \
-                   ORDER BY nb_etablissements DESC LIMIT 10"
+# A token with the audience of Trino, from the client of the examples. Its rights on the
+# data come from the DataAccessPolicies that name it.
+T=$(curl -sk https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d scope='openid trino' -d client_id=svc-trino-examples-writer \
+  --data-urlencode client_secret="$(kubectl get secret -n demo creds-examples-oauth2-trino \
+    -o jsonpath='{.data.client_secret}' | base64 -d)" | jq -r .access_token)
+kubectl exec -i -n demo deploy/demo-trino-main-trino-coordinator -- \
+  trino --server https://trino-demo.okdp.sandbox \
+  --truststore-path /cacerts/bundle.p12 --truststore-password '' --access-token "$T" <<'SQL'
+SELECT code_departement, nb_etablissements, part_qpv
+FROM gold.france_establishments.etablissements_par_departement
+ORDER BY nb_etablissements DESC LIMIT 10;
+SQL
 ```
