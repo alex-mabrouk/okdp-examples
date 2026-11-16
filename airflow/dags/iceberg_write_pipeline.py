@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).parent))
 
 import spark_submit
 from airflow import DAG
+from airflow.sdk import Param
 from airflow.providers.standard.operators.python import PythonOperator
 
 SCRIPT_PATH = Path(__file__).parent / "spark_jobs" / "iceberg_write_job.py"
@@ -23,24 +24,25 @@ ICEBERG_NAMESPACE = os.getenv("ICEBERG_WRITE_NAMESPACE", "sales")
 ICEBERG_TABLE = os.getenv("ICEBERG_WRITE_TABLE", "orders_dag")
 
 
-def write_table(run_id):
+def write_table(run_id, params):
+    catalog = params["catalog"]
     app = spark_submit.submit_and_wait(
         name="iceberg-write",
         run_id=run_id,
         script_path=SCRIPT_PATH,
         arguments=[
-            "--catalog", ICEBERG_CATALOG,
+            "--catalog", catalog,
             "--namespace", ICEBERG_NAMESPACE,
             "--table", ICEBERG_TABLE,
             "--run-id", spark_submit.slug(run_id),
         ],
-        spark_conf=spark_submit.iceberg_catalog_conf(ICEBERG_CATALOG),
+        spark_conf=spark_submit.iceberg_catalog_conf(catalog),
         polaris=True,
         s3=False,
         executors=1,
         timeout_seconds=900,
     )
-    return f"Iceberg table written: {ICEBERG_CATALOG}.{ICEBERG_NAMESPACE}.{ICEBERG_TABLE} ({app})"
+    return f"Iceberg table written: {catalog}.{ICEBERG_NAMESPACE}.{ICEBERG_TABLE} ({app})"
 
 
 with DAG(
@@ -50,6 +52,8 @@ with DAG(
     schedule=None,
     catchup=False,
     tags=["iceberg", "polaris", "spark"],
+    # One of the icebergCatalogs of the Airflow instance.
+    params={"catalog": Param(ICEBERG_CATALOG, type="string")},
 ) as dag:
     PythonOperator(
         task_id="write_table",

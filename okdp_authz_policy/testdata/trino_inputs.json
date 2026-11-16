@@ -1,0 +1,251 @@
+{
+  "nina_execute_query": {
+    "action": {
+      "operation": "ExecuteQuery"
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_access_catalog": {
+    "action": {
+      "operation": "AccessCatalog",
+      "resource": {
+        "catalog": {
+          "name": "lake"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_205954_00006_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_filter_catalogs": {
+    "action": {
+      "operation": "FilterCatalogs",
+      "resource": {
+        "catalog": {
+          "name": "lake"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_205954_00006_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_filter_schemas": {
+    "action": {
+      "operation": "FilterSchemas",
+      "resource": {
+        "schema": {
+          "catalogName": "lake",
+          "schemaName": "information_schema"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_205954_00006_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_filter_tables": {
+    "action": {
+      "operation": "FilterTables",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "schemaName": "sales",
+          "tableName": "orders_dag"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_225244_00013_denwg",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_filter_columns": {
+    "action": {
+      "operation": "FilterColumns",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "columns": [
+            "id"
+          ],
+          "schemaName": "sales",
+          "tableName": "orders"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_225248_00018_denwg",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_select": {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "columns": [
+            "country",
+            "id"
+          ],
+          "schemaName": "sales",
+          "tableName": "trino_t"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_210023_00007_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "nina_select_information_schema": {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "columns": [
+            "schema_name"
+          ],
+          "schemaName": "information_schema",
+          "tableName": "schemata"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "nina"
+      },
+      "properties": {},
+      "queryId": "20261115_205954_00006_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "bob_show_schemas": {
+    "action": {
+      "operation": "ShowSchemas",
+      "resource": {
+        "catalog": {
+          "name": "lake"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "bob"
+      },
+      "properties": {},
+      "queryId": "20261115_201639_00000_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "bob_insert": {
+    "action": {
+      "operation": "InsertIntoTable",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "schemaName": "sales",
+          "tableName": "trino_t"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "bob"
+      },
+      "properties": {},
+      "queryId": "20261115_201722_00003_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  },
+  "bob_create_table": {
+    "action": {
+      "operation": "CreateTable",
+      "resource": {
+        "table": {
+          "catalogName": "lake",
+          "properties": {},
+          "schemaName": "sales",
+          "tableName": "trino_t"
+        }
+      }
+    },
+    "context": {
+      "identity": {
+        "groups": [],
+        "user": "bob"
+      },
+      "properties": {},
+      "queryId": "20261115_201719_00002_a38rv",
+      "softwareStack": {
+        "trinoVersion": "484"
+      }
+    }
+  }
+}

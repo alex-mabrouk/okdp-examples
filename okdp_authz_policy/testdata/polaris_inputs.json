@@ -1,0 +1,195 @@
+{
+  "etl_load_table_write": {
+    "action": "LOAD_TABLE_WITH_WRITE_DELEGATION",
+    "actor": {
+      "attributes": {},
+      "principal": "9a120752-70cc-417c-b61a-cde4774d3480",
+      "roles": [
+        "2e97ae93-a55f-41a9-908e-622628f66e73"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000002"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "orders",
+          "parents": [
+            {
+              "name": "lake",
+              "parents": [],
+              "type": "CATALOG"
+            },
+            {
+              "name": "sales",
+              "parents": [],
+              "type": "NAMESPACE"
+            }
+          ],
+          "type": "TABLE_LIKE"
+        }
+      ]
+    }
+  },
+  "etl_create_table_staged": {
+    "action": "CREATE_TABLE_STAGED_WITH_WRITE_DELEGATION",
+    "actor": {
+      "attributes": {},
+      "principal": "9a120752-70cc-417c-b61a-cde4774d3480",
+      "roles": [
+        "2e97ae93-a55f-41a9-908e-622628f66e73"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000018"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "sales",
+          "parents": [
+            {
+              "name": "lake",
+              "parents": [],
+              "type": "CATALOG"
+            }
+          ],
+          "type": "NAMESPACE"
+        }
+      ]
+    }
+  },
+  "etl_update_table": {
+    "action": "UPDATE_TABLE",
+    "actor": {
+      "attributes": {},
+      "principal": "9a120752-70cc-417c-b61a-cde4774d3480",
+      "roles": [
+        "2e97ae93-a55f-41a9-908e-622628f66e73"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000044"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "orders_dag",
+          "parents": [
+            {
+              "name": "lake",
+              "parents": [],
+              "type": "CATALOG"
+            },
+            {
+              "name": "sales",
+              "parents": [],
+              "type": "NAMESPACE"
+            }
+          ],
+          "type": "TABLE_LIKE"
+        }
+      ]
+    }
+  },
+  "etl_load_namespace": {
+    "action": "LOAD_NAMESPACE_METADATA",
+    "actor": {
+      "attributes": {},
+      "principal": "9a120752-70cc-417c-b61a-cde4774d3480",
+      "roles": [
+        "2e97ae93-a55f-41a9-908e-622628f66e73"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000014"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "sales",
+          "parents": [
+            {
+              "name": "lake",
+              "parents": [],
+              "type": "CATALOG"
+            }
+          ],
+          "type": "NAMESPACE"
+        }
+      ]
+    }
+  },
+  "trino_list_namespaces": {
+    "action": "LIST_NAMESPACES",
+    "actor": {
+      "attributes": {},
+      "principal": "4176db90-efbe-43f2-9392-b18c665dd24b",
+      "roles": [
+        "cd17d3e3-f484-472d-a262-d2920b2d3bb9"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000050"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "lake",
+          "parents": [],
+          "type": "CATALOG"
+        }
+      ]
+    }
+  },
+  "trino_list_tables": {
+    "action": "LIST_TABLES",
+    "actor": {
+      "attributes": {},
+      "principal": "4176db90-efbe-43f2-9392-b18c665dd24b",
+      "roles": [
+        "cd17d3e3-f484-472d-a262-d2920b2d3bb9"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000058"
+    },
+    "resource": {
+      "targets": [
+        {
+          "name": "sales",
+          "parents": [
+            {
+              "name": "lake",
+              "parents": [],
+              "type": "CATALOG"
+            }
+          ],
+          "type": "NAMESPACE"
+        }
+      ]
+    }
+  },
+  "server_list_catalogs": {
+    "action": "LIST_CATALOGS",
+    "actor": {
+      "attributes": {},
+      "principal": "f4083fbb-3858-453a-af80-1fc988b4c353",
+      "roles": [
+        "6f91fbfc-1877-4386-9c34-a6b31e1c51da"
+      ]
+    },
+    "context": {
+      "realm": "authz",
+      "request_id": "cf14d25d-8e50-46ed-a6a9-78fbf46801d3_0000000000000000001"
+    },
+    "resource": {}
+  }
+}
