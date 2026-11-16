@@ -1,7 +1,8 @@
 """
 Iceberg write pipeline - Airflow + Spark Operator
 Writes a small Iceberg table through a Polaris REST catalog with the workload
-identity of the project. No object store key: the catalog vends the credentials
+identity of the project, allowed by a DataAccessPolicy that names its client
+(see authz/). No object store key: the catalog vends the credentials
 of the table.
 """
 import os
@@ -19,7 +20,7 @@ from airflow.providers.standard.operators.python import PythonOperator
 
 SCRIPT_PATH = Path(__file__).parent / "spark_jobs" / "iceberg_write_job.py"
 
-ICEBERG_CATALOG = os.getenv("ICEBERG_WRITE_CATALOG", "lake")
+ICEBERG_CATALOG = os.getenv("ICEBERG_WRITE_CATALOG", "silver")
 ICEBERG_NAMESPACE = os.getenv("ICEBERG_WRITE_NAMESPACE", "sales")
 ICEBERG_TABLE = os.getenv("ICEBERG_WRITE_TABLE", "orders_dag")
 

@@ -14,57 +14,36 @@
 #  limitations under the License.
 #
 
-name: ci 
+name: ci
 
 on:
   pull_request:
     branches:
       - main
-    paths:
-      - ".github/workflows/**"
-      - ".github/actions/**"
-
-      - ".ct.yml"
-      - ".lintconf.yaml"
-
-      - "**/**"
-  
-      - "!README.md"
-      - "!**/README.md"
-      - "!docs/**"
-
   push:
     branches:
       - '**'
-    paths:
-      - ".github/workflows/**"
-      - ".github/actions/**"
-
-      - ".ct.yml"
-      - ".lintconf.yaml"
-
-      - "**/**"
-
-      - "!README.md"
-      - "!**/README.md"
-      - "!docs/**"
-
   workflow_dispatch:
-  
+
 permissions:
-  contents: write
+  contents: read
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
-  # Only cancel in-progress jobs or runs for the current workflow - matches against branch & tags
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  python-compile:
+    name: python-compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
 
-  helm-lint:
-    name: helm-lint
-    uses: ./.github/workflows/helm-lint-template.yml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-
-
+      - name: Compile the DAGs, Spark jobs and scripts
+        run: python -m compileall -q airflow docker openwebui
