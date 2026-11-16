@@ -145,7 +145,15 @@ Slug `einvoicing`, built by the scripts in
 truth rather than the export.
 
 ```bash
-kubectl exec -i -n demo deploy/demo-trino-main-trino-coordinator -- trino <<'SQL'
+# A token with the audience of Trino, from the client of the examples. Its rights on the
+# data come from the DataAccessPolicies that name it.
+T=$(curl -sk https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d scope='openid trino' -d client_id=svc-trino-examples-writer \
+  --data-urlencode client_secret="$(kubectl get secret -n demo creds-examples-oauth2-trino \
+    -o jsonpath='{.data.client_secret}' | base64 -d)" | jq -r .access_token)
+kubectl exec -i -n demo deploy/demo-trino-main-trino-coordinator -- \
+  trino --server https://trino-demo.okdp.sandbox \
+  --truststore-path /cacerts/bundle.p12 --truststore-password '' --access-token "$T" <<'SQL'
 SELECT regle_id, famille, nb_factures, montant_impacte
 FROM gold.einvoicing.qualite_anomalies ORDER BY nb_factures DESC;
 SQL

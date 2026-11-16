@@ -23,8 +23,8 @@ out of sight.
 
 Open WebUI → *Admin → Functions → +* → paste `ai_assistant.py` → save, then open its
 valves and set `CLIENT_SECRET` (Keycloak client `svc-trino-examples-writer`, from
-`creds-examples-oauth2-trino`). The other valves default to the in-cluster endpoints of
-the `demo` project. Pick a domain in a new chat.
+`creds-examples-oauth2-trino`). The other valves default to the endpoints of the `demo`
+project; Trino is called on its HTTPS URL with a token that carries its audience (`SCOPE`). Pick a domain in a new chat.
 
 Functions live in Open WebUI's database, not in git: this file is the source of truth and
 a fresh cluster needs the paste again.
@@ -66,10 +66,7 @@ and costs the VRAM the act 1 DAG needs.
 
 ## What the guard is, and what it is not
 
-`svc-trino-examples-writer` is a **writer** account and Trino carries no catalog rules, so
-`guard()` — SELECT only, single statement, and only the schema of the selected domain — is
-the sole barrier, not a second belt. It is a demo guard, not an authorization layer: that belongs in
-Trino, and `../../trino_opa_policy/` is the example of it.
-
-Trino also denies impersonation: `X-Trino-User` must be the JWT principal, here the
-`client_id`. Any other value answers `cannot impersonate user`.
+`guard()` (SELECT only, single statement, and only the schema of the selected domain) is a
+demo guard, not an authorization layer. Trino decides what `svc-trino-examples-writer` may
+read, from the DataAccessPolicies that name it (`../../okdp_authz_policy/`). Trino sees it as
+`service-account-svc-trino-examples-writer`, the user of its token.
