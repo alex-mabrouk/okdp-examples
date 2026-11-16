@@ -19,11 +19,11 @@ operation := input.action.operation
 
 resource := object.get(input.action, "resource", {})
 
-# Interactive users come with their name: their groups are read from the identity provider.
-# Workloads sign in with a JWT whose principal is their client id.
+# Trino sends the user name only: the identity provider gives the groups of a user and the
+# client of a service account.
 groups := {g | some g in object.get(identity, "groups", [])} | idp.groups(identity.user)
 
-clients := {identity.user}
+clients := idp.clients(identity.user)
 
 alias(catalog) := {"owner": {"namespace": parts[0], "catalog": parts[1]}, "warehouse": parts[2]} if {
 	value := input.context.properties[concat(".", ["okdp.catalog", catalog])]

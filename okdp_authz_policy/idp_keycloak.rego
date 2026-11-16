@@ -1,7 +1,8 @@
-# Groups of a user read from the Keycloak admin API, for the engines that do not get them in
-# the token (Trino). Settings from the environment of OPA:
+# Groups of a user and client of a service account, read from the Keycloak admin API, for the
+# engines that only send a user name (Trino). Settings from the environment of OPA:
 #   OKDP_IDP_URL            https://<host>/realms/<realm> (the issuer)
-#   OKDP_IDP_CLIENT_ID      client with the view-users role of the realm
+#   OKDP_IDP_CLIENT_ID      client with the view-users and view-clients roles of the realm,
+#                           and the kc-admin-api scope
 #   OKDP_IDP_CLIENT_SECRET
 #   OKDP_IDP_CA_FILE        CA of the issuer (optional)
 #   OKDP_IDP_CACHE_SECONDS  how long a membership is kept (default 60)
@@ -58,4 +59,18 @@ groups(user) := {g.name |
 	users := get(concat("", ["/users?exact=true&briefRepresentation=true&username=", urlquery.encode(user)]))
 	count(users) == 1
 	some g in get(concat("", ["/users/", users[0].id, "/groups?briefRepresentation=true"]))
+}
+
+service_account_prefix := "service-account-"
+
+# The client id of a service account, named service-account-<client id> by Keycloak. The client
+# must own this account: an ordinary user may carry the same name.
+clients(user) := {client.clientId |
+	startswith(user, service_account_prefix)
+	id := substring(user, count(service_account_prefix), -1)
+	found := get(concat("", ["/clients?clientId=", urlquery.encode(id)]))
+	count(found) == 1
+	client := found[0]
+	account := get(concat("", ["/clients/", client.id, "/service-account-user"]))
+	account.username == user
 }

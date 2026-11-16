@@ -9,6 +9,14 @@ idp_groups := {"nina": {"business_analyst"}, "bob": {"data_engineer"}}
 
 mock_groups(user) := object.get(idp_groups, user, set())
 
+etl := "2e97ae93-a55f-41a9-908e-622628f66e73"
+
+etl_account := concat("", ["service-account-", etl])
+
+mock_clients(user) := {etl} if user == etl_account
+
+mock_clients(user) := set() if user != etl_account
+
 # Real inputs of the lot 1 decision logs, catalog "lake" served from the warehouse given here.
 on(name, warehouse) := json.patch(data.testdata[name], [{
 	"op": "add",
@@ -22,18 +30,21 @@ allowed(i) if {
 	trino.allow with input as i
 		with data.kubernetes.dataaccesspolicies as policies
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 }
 
 row_filters(i) := f if {
 	f := trino.rowFilters with input as i
 		with data.kubernetes.dataaccesspolicies as policies
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 }
 
 masks(i) := m if {
 	m := trino.columnMasks with input as i
 		with data.kubernetes.dataaccesspolicies as policies
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 }
 
 test_execute_query if allowed(data.testdata.nina_execute_query)
@@ -83,9 +94,12 @@ test_bob_cannot_drop_silver if {
 test_unknown_user_denied if not allowed(as_user(on("nina_select", "gold"), "mallory"))
 
 test_workload_by_client_id if {
-	allowed(as_user(on("bob_insert", "silver"), "2e97ae93-a55f-41a9-908e-622628f66e73"))
-	not allowed(as_user(on("bob_insert", "gold"), "2e97ae93-a55f-41a9-908e-622628f66e73"))
+	allowed(as_user(on("bob_insert", "silver"), etl_account))
+	not allowed(as_user(on("bob_insert", "gold"), etl_account))
 }
+
+# The client id alone is a user name like any other.
+test_bare_client_id_is_not_the_client if not allowed(as_user(on("bob_insert", "silver"), etl))
 
 test_unknown_operation_denied if {
 	i := json.patch(on("nina_select", "gold"), [{"op": "replace", "path": "/action/operation", "value": "SetSystemSessionProperty"}])
@@ -127,6 +141,7 @@ test_row_filters_of_two_policies_or if {
 	f := trino.rowFilters with input as row_filter_input("gold", "nina")
 		with data.kubernetes.dataaccesspolicies as p
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 	f == [{"expression": "(\"country\" = 'FR') OR (\"country\" IN ('DE', 'AT') AND \"amount\" > 100)"}]
 }
 
@@ -140,6 +155,7 @@ test_policy_without_filter_lifts_it if {
 	f := trino.rowFilters with input as row_filter_input("gold", "nina")
 		with data.kubernetes.dataaccesspolicies as p
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 	f == []
 }
 
@@ -166,6 +182,7 @@ mask_of(action, type) := e if {
 	m := trino.columnMasks with input as mask_input("gold", [["c", type]])
 		with data.kubernetes.dataaccesspolicies as p
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 	e := m[0].viewExpression.expression
 }
 
@@ -198,8 +215,7 @@ test_schemas if {
 }
 
 test_rename_table if {
-	etl := "2e97ae93-a55f-41a9-908e-622628f66e73"
-	i := json.patch(as_user(on("bob_insert", "silver"), etl), [
+	i := json.patch(as_user(on("bob_insert", "silver"), etl_account), [
 		{"op": "replace", "path": "/action/operation", "value": "RenameTable"},
 		{"op": "add", "path": "/action/targetResource", "value": {"table": {"catalogName": "lake", "schemaName": "sales", "tableName": "t2"}}},
 	])
@@ -226,6 +242,7 @@ test_conditions if {
 	f := trino.rowFilters with input as row_filter_input("gold", "nina")
 		with data.kubernetes.dataaccesspolicies as p
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 	f == [{"expression": "((\"a\" IS NULL OR \"a\" <> 'it''s') AND (\"b\" IS NULL OR \"b\" NOT IN (1, 2)) AND starts_with(\"c\", 'FR') AND (\"d\" IS NULL OR NOT starts_with(\"d\", 'X')) AND \"e\" IS NULL AND \"f\"\"g\" IS NOT NULL AND \"h\" <= 3)"}]
 }
 
@@ -253,6 +270,7 @@ test_mask_needs_every_policy if {
 	m := trino.columnMasks with input as mask_input("gold", [["email", "varchar"]])
 		with data.kubernetes.dataaccesspolicies as p
 		with data.okdp.idp.groups as mock_groups
+		with data.okdp.idp.clients as mock_clients
 	m == []
 }
 
