@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import re
 import time
@@ -34,15 +33,14 @@ SCRIPT_FILE_PATH = Path(__file__).parent / "spark_jobs" / SCRIPT_FILE_NAME
 SCRIPT_MOUNT_DIR = "/opt/spark/app"
 SCRIPT_MOUNT_PATH = f"{SCRIPT_MOUNT_DIR}/{SCRIPT_FILE_NAME}"
 SPARK_SERVICE_ACCOUNT = "spark"
-S3_CREDENTIALS_SECRET = "creds-examples-s3"
-S3_ACCESS_KEY_FIELD = "S3_ACCESS_KEY"
-S3_SECRET_KEY_FIELD = "S3_SECRET_KEY"
+# Storage identity of the Airflow instance (s3-v1 Secret), mounted in the Spark pods.
+S3_CREDENTIALS_SECRET = os.getenv("S3_CREDENTIALS_SECRET", "")
+S3_ACCESS_KEY_FIELD = "accessKey"
+S3_SECRET_KEY_FIELD = "secretKey"
 DEFAULT_S3_INPUT_BUCKET = "bronze"
 DEFAULT_S3_OUTPUT_BUCKET = "bronze"
 DEFAULT_S3_INPUT_PREFIX = "commerce/orders/raw"
 DEFAULT_S3_OUTPUT_PREFIX = "commerce/orders/curated"
-# The sandbox store. Any other platform sets AIRFLOW_ETL_S3_ENDPOINT.
-DEFAULT_S3_ENDPOINT = "http://storage-s3.default.svc.cluster.local:8333"
 S3_ENDPOINT_ENV_VAR = "AIRFLOW_ETL_S3_ENDPOINT"
 S3_INPUT_BUCKET_ENV_VAR = "AIRFLOW_ETL_S3_INPUT_BUCKET"
 S3_OUTPUT_BUCKET_ENV_VAR = "AIRFLOW_ETL_S3_OUTPUT_BUCKET"
@@ -84,8 +82,10 @@ def _clean_prefix(value: str, default_value: str) -> str:
 
 
 def _s3_endpoint() -> str:
-    env_endpoint = os.getenv(S3_ENDPOINT_ENV_VAR, "").strip().rstrip("/")
-    return env_endpoint or DEFAULT_S3_ENDPOINT
+    endpoint = (os.getenv(S3_ENDPOINT_ENV_VAR) or os.getenv("AWS_ENDPOINT_URL_S3", "")).strip().rstrip("/")
+    if not endpoint:
+        raise RuntimeError("AWS_ENDPOINT_URL_S3 is not set: no object store was declared")
+    return endpoint
 
 
 def _resolve_s3_locations() -> tuple[str, str, str, str]:
@@ -107,31 +107,13 @@ def _bool_env(env_name: str, default_value: bool) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _ensure_s3_bucket_exists(core_api: client.CoreV1Api, s3_endpoint: str, bucket: str) -> None:
-    try:
-        secret = core_api.read_namespaced_secret(name=S3_CREDENTIALS_SECRET, namespace=NAMESPACE)
-    except ApiException as exc:
-        raise RuntimeError(
-            f"Unable to read S3 credentials secret {S3_CREDENTIALS_SECRET} in namespace {NAMESPACE}"
-        ) from exc
-
-    secret_data = secret.data or {}
-    access_key_b64 = secret_data.get(S3_ACCESS_KEY_FIELD, "")
-    secret_key_b64 = secret_data.get(S3_SECRET_KEY_FIELD, "")
-    if not access_key_b64 or not secret_key_b64:
-        raise RuntimeError(
-            f"S3 credentials secret {S3_CREDENTIALS_SECRET} is missing keys "
-            f"{S3_ACCESS_KEY_FIELD}/{S3_SECRET_KEY_FIELD}"
-        )
-
-    access_key = base64.b64decode(access_key_b64).decode("utf-8")
-    secret_key = base64.b64decode(secret_key_b64).decode("utf-8")
-
+def _ensure_s3_bucket_exists(s3_endpoint: str, bucket: str) -> None:
+    """Credentials come from the AWS_* environment of the task."""
     verify_ssl = _bool_env(
         S3_VERIFY_SSL_ENV_VAR,
         default_value=s3_endpoint.lower().startswith("https://"),
     )
-    s3_region = os.getenv(S3_REGION_ENV_VAR, "us-east-1")
+    s3_region = os.getenv(S3_REGION_ENV_VAR) or os.getenv("AWS_REGION", "us-east-1")
 
     import boto3
     from botocore.exceptions import ClientError
@@ -139,8 +121,6 @@ def _ensure_s3_bucket_exists(core_api: client.CoreV1Api, s3_endpoint: str, bucke
     s3_client = boto3.client(
         "s3",
         endpoint_url=s3_endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
         region_name=s3_region,
         verify=verify_ssl,
     )
@@ -202,7 +182,9 @@ def submit_and_wait_orders_etl(run_id: str, timeout_seconds: int = 1200) -> str:
     output_uri = f"{s3_output_uri_base}/{run_key}"
     ssl_enabled = str(s3_endpoint.lower().startswith("https://")).lower()
 
-    _ensure_s3_bucket_exists(core_api=core_api, s3_endpoint=s3_endpoint, bucket=bucket)
+    if not S3_CREDENTIALS_SECRET:
+        raise RuntimeError("S3_CREDENTIALS_SECRET is not set: no storage identity for the Spark job")
+    _ensure_s3_bucket_exists(s3_endpoint=s3_endpoint, bucket=bucket)
     script_content = _load_spark_script()
     _upsert_config_map(core_api=core_api, name=script_cm_name, script_content=script_content)
     _delete_if_exists(custom_api=custom_api, app_name=spark_app_name)
