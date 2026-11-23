@@ -12,6 +12,7 @@ reads it.
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -57,6 +58,8 @@ TRUSTSTORE_FILE = "bundle.p12"
 # lineage. The listener jar comes from Maven Central at each run.
 SPARK_LINEAGE_URL = os.getenv("SPARK_LINEAGE_URL", "")
 SPARK_LINEAGE_TOKEN_SECRET = os.getenv("SPARK_LINEAGE_TOKEN_SECRET", "")
+# Namespace of the DAGs, named after the Airflow Release: the catalog links each job to its DAG.
+SPARK_LINEAGE_PARENT_NAMESPACE = os.getenv("SPARK_LINEAGE_PARENT_NAMESPACE", "")
 SPARK_LINEAGE_TOKEN_FIELD = "token"
 OPENLINEAGE_SPARK_PACKAGE = "io.openlineage:openlineage-spark_2.12:1.55.0"
 
@@ -160,13 +163,26 @@ def _lineage_conf(name):
     """Spark settings of the OpenLineage listener, empty when no receiver is declared."""
     if not SPARK_LINEAGE_URL:
         return {}
-    return {
+    conf = {
         "spark.jars.packages": OPENLINEAGE_SPARK_PACKAGE,
         "spark.jars.ivy": "/tmp/.ivy2",
         "spark.extraListeners": "io.openlineage.spark.agent.OpenLineageSparkListener",
         "spark.openlineage.namespace": NAMESPACE,
         "spark.openlineage.appName": name,
     }
+    if SPARK_LINEAGE_PARENT_NAMESPACE:
+        from airflow.sdk import get_current_context
+
+        dag_run = get_current_context()["dag_run"]
+        run = f"{SPARK_LINEAGE_PARENT_NAMESPACE}/{dag_run.dag_id}/{dag_run.run_id}"
+        conf.update(
+            {
+                "spark.openlineage.parentJobNamespace": SPARK_LINEAGE_PARENT_NAMESPACE,
+                "spark.openlineage.parentJobName": dag_run.dag_id,
+                "spark.openlineage.parentRunId": str(uuid.uuid5(uuid.NAMESPACE_URL, run)),
+            }
+        )
+    return conf
 
 
 def _lineage_env():
