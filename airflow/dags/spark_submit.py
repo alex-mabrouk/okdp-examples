@@ -13,6 +13,7 @@ import os
 import re
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
@@ -51,6 +52,13 @@ POLARIS_SCOPE = "openid"
 TRUSTSTORE_SECRET = os.getenv("SPARK_TRUSTSTORE_SECRET", "certs-bundle")
 TRUSTSTORE_MOUNT_DIR = "/cacerts"
 TRUSTSTORE_FILE = "bundle.p12"
+
+# OpenLineage receiver of the jobs (sparkLineage of the Airflow instance). Unset: no
+# lineage. The listener jar comes from Maven Central at each run.
+SPARK_LINEAGE_URL = os.getenv("SPARK_LINEAGE_URL", "")
+SPARK_LINEAGE_TOKEN_SECRET = os.getenv("SPARK_LINEAGE_TOKEN_SECRET", "")
+SPARK_LINEAGE_TOKEN_FIELD = "token"
+OPENLINEAGE_SPARK_PACKAGE = "io.openlineage:openlineage-spark_2.12:1.55.0"
 
 
 def current_namespace() -> str:
@@ -146,6 +154,43 @@ def iceberg_catalog_conf(*catalogs):
             }
         )
     return conf
+
+
+def _lineage_conf(name):
+    """Spark settings of the OpenLineage listener, empty when no receiver is declared."""
+    if not SPARK_LINEAGE_URL:
+        return {}
+    return {
+        "spark.jars.packages": OPENLINEAGE_SPARK_PACKAGE,
+        "spark.jars.ivy": "/tmp/.ivy2",
+        "spark.extraListeners": "io.openlineage.spark.agent.OpenLineageSparkListener",
+        "spark.openlineage.namespace": NAMESPACE,
+        "spark.openlineage.appName": name,
+    }
+
+
+def _lineage_env():
+    """Transport of the driver. In the environment only: the listener ignores an API key
+    from the environment once the transport is set in the Spark configuration, and the
+    key must stay out of the SparkApplication."""
+    if not SPARK_LINEAGE_URL:
+        return [], {}
+    if not SPARK_LINEAGE_TOKEN_SECRET:
+        raise RuntimeError("SPARK_LINEAGE_TOKEN_SECRET is not set: no API key for the lineage receiver")
+    url = urlsplit(SPARK_LINEAGE_URL)
+    env = [
+        {"name": "OPENLINEAGE__TRANSPORT__TYPE", "value": "http"},
+        {"name": "OPENLINEAGE__TRANSPORT__URL", "value": f"{url.scheme}://{url.netloc}"},
+        {"name": "OPENLINEAGE__TRANSPORT__ENDPOINT", "value": url.path or "/"},
+        {"name": "OPENLINEAGE__TRANSPORT__AUTH__TYPE", "value": "api_key"},
+    ]
+    secrets = {
+        "OPENLINEAGE__TRANSPORT__AUTH__API_KEY": {
+            "name": SPARK_LINEAGE_TOKEN_SECRET,
+            "key": SPARK_LINEAGE_TOKEN_FIELD,
+        }
+    }
+    return env, secrets
 
 
 def _configmap_name(script_path):
@@ -280,6 +325,7 @@ def submit_and_wait(
     app_name = safe_name(name, slug(run_id))
 
     conf = base_spark_conf(s3)
+    conf.update(_lineage_conf(name))
     conf.update(spark_conf or {})
 
     driver, volumes = _pod_spec(
@@ -293,6 +339,9 @@ def submit_and_wait(
             "serviceAccount": SPARK_SERVICE_ACCOUNT,
         },
     )
+    lineage_env, lineage_secrets = _lineage_env()
+    driver["env"] += lineage_env
+    driver["envSecretKeyRefs"].update(lineage_secrets)
     executor, _ = _pod_spec(
         name,
         configmap_name,
