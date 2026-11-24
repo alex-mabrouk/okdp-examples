@@ -6,7 +6,6 @@ partitioned by French department where the source carries an address.
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlparse
 
 # Airflow 3 loads each DAG file through module_from_spec without putting the DAGs
 # folder on sys.path, unlike Airflow 2, so the shared modules sitting next to this
@@ -15,6 +14,7 @@ sys.path.append(str(Path(__file__).parent))
 
 import os
 
+import s3_landing
 import spark_submit
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
@@ -57,84 +57,20 @@ default_args = {
 }
 
 
-def _s3_client():
-    import boto3
-    from botocore.config import Config
-
-    missing = [v for v in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY") if not os.getenv(v)]
-    if missing:
-        raise RuntimeError(
-            f"{', '.join(missing)} missing: the task pod has no object-store identity"
-        )
-    return boto3.client(
-        "s3",
-        endpoint_url=spark_submit.s3_endpoint(),
-        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-        region_name=os.getenv("AWS_REGION", "us-east-1"),
-        # Landing the whole of France means 8 MB parts that outlast botocore's
-        # 60 s read timeout, and nothing retries them by default.
-        config=Config(
-            connect_timeout=60,
-            read_timeout=600,
-            retries={"max_attempts": 5, "mode": "standard"},
-        ),
-    )
-
-
-def _already_landed(s3, key, expected_size):
-    """A source file is immutable for a given millésime: same size means done."""
-    try:
-        head = s3.head_object(Bucket=BRONZE_BUCKET, Key=key)
-    except Exception:
-        return False
-    return expected_size is not None and head["ContentLength"] == expected_size
-
-
-def _land_url(s3, url, source):
-    """Stream one remote file straight into S3, without staging it on disk."""
-    import requests
-    from boto3.s3.transfer import TransferConfig
-
-    with requests.get(url, stream=True, timeout=(30, 600)) as response:
-        response.raise_for_status()
-        file_name = Path(urlparse(response.url).path).name
-        size = response.headers.get("Content-Length")
-        size = int(size) if size else None
-        key = f"{BRONZE_PREFIX}/_source/{source}/{file_name}"
-
-        if _already_landed(s3, key, size):
-            print(f"already landed, skipping: s3://{BRONZE_BUCKET}/{key}")
-            return key
-
-        pretty = f"{size / 1e6:.1f} MB" if size else "unknown size"
-        print(f"landing {response.url} ({pretty}) -> s3://{BRONZE_BUCKET}/{key}")
-        response.raw.decode_content = True
-        # Fewer, larger parts off a single non-seekable stream: 940 MB goes from
-        # ~113 parts across 10 threads down to ~15 across 4.
-        s3.upload_fileobj(
-            response.raw,
-            BRONZE_BUCKET,
-            key,
-            Config=TransferConfig(
-                multipart_chunksize=64 * 1024 * 1024, max_concurrency=4
-            ),
-        )
-
-    print(f"landed s3://{BRONZE_BUCKET}/{key}")
-    return key
+def _land(s3, url, source):
+    return s3_landing.land_url(s3, url, BRONZE_BUCKET, f"{BRONZE_PREFIX}/_source/{source}")
 
 
 def land_source(source):
-    return _land_url(_s3_client(), SOURCE_URLS[source], source)
+    return _land(s3_landing.s3_client(), SOURCE_URLS[source], source)
 
 
 def land_ban():
     """BAN is the one source published per department, so the dev loop is cheap."""
-    s3 = _s3_client()
+    s3 = s3_landing.s3_client()
     targets = departments() or ["france"]
     return [
-        _land_url(s3, f"{BAN_BASE_URL}/adresses-{target}.csv.gz", "ban")
+        _land(s3, f"{BAN_BASE_URL}/adresses-{target}.csv.gz", "ban")
         for target in targets
     ]
 

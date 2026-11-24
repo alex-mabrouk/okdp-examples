@@ -16,6 +16,9 @@ workflows on the OKDP platform.
 | `france_establishments_bronze` | Lands four French open-data sources, partitioned by department — [docs](docs/france-establishments.md) |
 | `france_establishments_silver` | Joins them into a conformed Iceberg table — [docs](docs/france-establishments.md) |
 | `france_establishments_gold` | Aggregates the five tables the dashboard reads — [docs](docs/france-establishments.md) |
+| `achats_publics_bronze` | Lands the DECP public contracts and the INSEE geographic code — [docs](docs/achats-publics.md) |
+| `achats_publics_silver` | Business rules, SIRENE matching and reference tables — [docs](docs/achats-publics.md) |
+| `achats_publics_gold` | Materializes the purchases datamart — [docs](docs/achats-publics.md) |
 
 ## How a DAG reaches the scheduler
 
@@ -74,7 +77,8 @@ airflow/
 ├── docs/
 │   ├── nyc-taxi.md
 │   ├── iceberg-polaris.md
-│   └── france-establishments.md
+│   ├── france-establishments.md
+│   └── achats-publics.md
 ├── dags/
 │   ├── hello_world.py
 │   ├── hello_daily.py
@@ -85,11 +89,16 @@ airflow/
 │   ├── spark_submit.py                      submit a SparkApplication, once
 │   ├── france_establishments_assets.py      identifiers and assets of the chain
 │   ├── france_establishments_{bronze,silver,gold}_pipeline.py
+│   ├── s3_landing.py                        stream a download into S3
+│   ├── decp_stream.py                       cut a DECP document into JSON Lines
+│   ├── achats_publics_assets.py             identifiers and assets of the chain
+│   ├── achats_publics_{bronze,silver,gold}_pipeline.py
 │   └── spark_jobs/
 │       ├── nyc_taxi_etl_job.py
 │       ├── orders_etl_job.py
 │       ├── iceberg_polaris_etl_job.py
-│       └── france_establishments_{bronze,silver,gold}_job.py
+│       ├── france_establishments_{bronze,silver,gold}_job.py
+│       └── achats_publics_{bronze,referentiels,silver,gold}_job.py
 └── tests/
     ├── test_dags.py
     └── run_integration_tests.sh
