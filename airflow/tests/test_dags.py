@@ -97,3 +97,30 @@ def test_france_establishments_chain_is_linked_by_assets(dag_bag: DagBag) -> Non
         "silver_france_establishments_etablissements_actifs"
     }
     assert len(gold.get_task("build_indicators").outlets) == 5
+
+
+def test_achats_publics_chain_is_linked_by_assets(dag_bag: DagBag) -> None:
+    bronze = dag_bag.get_dag("achats_publics_bronze")
+    silver = dag_bag.get_dag("achats_publics_silver")
+    gold = dag_bag.get_dag("achats_publics_gold")
+    assert bronze is not None and silver is not None and gold is not None
+
+    assert {a.name for a in bronze.get_task("publish_decp").outlets} == {"bronze_achats_publics_decp"}
+    assert {a.name for a in bronze.get_task("publish_cog").outlets} == {"bronze_achats_publics_cog"}
+
+    # SIRENE is landed by the france_establishments chain, not a second time.
+    assert _asset_names(silver.timetable.asset_condition) == {
+        "bronze_achats_publics_decp",
+        "bronze_achats_publics_cog",
+        "bronze_france_establishments_sirene_etablissement",
+        "bronze_france_establishments_sirene_unite_legale",
+    }
+    assert _asset_names(gold.timetable.asset_condition) == {
+        "silver_achats_publics_marches",
+        "silver_achats_publics_attributions",
+        "silver_referentiels_acheteurs",
+    }
+    assert {a.name for a in gold.get_task("build_datamart").outlets} == {
+        "gold_achats_publics_attributions",
+        "gold_achats_publics_achats",
+    }
